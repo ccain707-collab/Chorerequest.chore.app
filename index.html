@@ -53,7 +53,7 @@ function remotePush(entry){
  if(!S.synced.includes(entry.ts))S.synced.push(entry.ts);
  S.synced=S.synced.slice(-1000);save();
  try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
-  body:JSON.stringify({child:entry.child,chore:entry.title,earnings:entry.earned,timestamp:entry.ts})}).catch(()=>{})}catch(e){}
+  body:JSON.stringify({child:entry.child,chore:entry.title,earnings:entry.earned,timestamp:entry.ts,photo:entry.photo||""})}).catch(()=>{})}catch(e){}
 }
 let pulling=false;
 async function remotePull(){
@@ -66,7 +66,7 @@ async function remotePull(){
   let changed=false;
   rows.sort((x,y)=>Number(x[3])-Number(y[3]));
   for(const row of rows){
-   const child=row[0],title=String(row[1]||""),earned=parseFloat(row[2])||0,ts=Number(row[3]);
+   const child=row[0],title=String(row[1]||""),earned=parseFloat(row[2])||0,ts=Number(row[3]),photoUrl=String(row[4]||"");
    if(!ts||!S.kids[child]||S.synced.includes(ts))continue;
    S.synced.push(ts);changed=true;
    const K=S.kids[child];
@@ -76,7 +76,7 @@ async function remotePull(){
     continue;
    }
    K.bank=+(K.bank+earned).toFixed(2);
-   const entry={id:"j"+ts,child,title,earned,ts,remote:1};
+   const entry={id:"j"+ts,child,title,earned,ts,remote:1};if(photoUrl)entry.photo=photoUrl;
    if(title.indexOf("🧺")===0){
     entry.laundry=1;entry.seen=0;
     const sw=title.indexOf("Switched")>=0;
