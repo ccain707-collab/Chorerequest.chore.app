@@ -21,4 +21,186 @@ main{background:var(--card);border:1px solid var(--ln);border-radius:18px;paddin
 .big{font:900 54px ui-monospace,monospace;text-align:center;color:var(--pr);margin:12px 0}
 .pick{width:100%;text-align:left;border:2px solid var(--ln);background:var(--bg);color:var(--tx);border-radius:12px;padding:12px;margin-top:10px;font:700 15px inherit}
 .ent{border:1px solid var(--ln);border-radius:12px;padding:10px;margin-top:10px}
-.ent img{width:100%;border-radius:8px;margin-top:
+.ent img{width:100%;border-radius:8px;margin-top:6px}.ent audio{width:100%;margin-top:6px}
+input[type=password],input[type=text]{width:100%;padding:12px;border:1px solid var(--ln);border-radius:12px;font-size:20px;text-align:center;background:var(--card);color:var(--tx)}
+.row{display:flex;justify-content:space-between;gap:8px}.c{text-align:center}
+@keyframes fall{to{transform:translateY(112vh) rotate(720deg)}}@keyframes rise{to{transform:translateY(-115vh) translateX(var(--dx))}}
+@keyframes cross{from{left:-150px}to{left:100vw}}@keyframes boogie{0%,100%{transform:translateY(0) rotate(-14deg) scaleX(1)}25%{transform:translateY(-38px) rotate(10deg) scaleX(-1)}50%{transform:translateY(0) rotate(14deg) scaleX(-1)}75%{transform:translateY(-38px) rotate(-10deg) scaleX(1)}}
+@keyframes bd{from{transform:translateY(26px) rotate(180deg) rotateY(0)}to{transform:translateY(26px) rotate(180deg) rotateY(360deg)}}@keyframes bf{0%{transform:translateY(0) rotate(0)}50%{transform:translateY(-95px) rotate(-180deg)}100%{transform:translateY(0) rotate(-360deg)}}@keyframes mw{0%,50%,100%{transform:scaleX(-1) translateX(0)}25%{transform:scaleX(-1) translateX(-12px) rotate(-5deg)}75%{transform:scaleX(-1) translateX(-12px) rotate(5deg)}}@keyframes tw{0%,100%{transform:translateY(22px) rotate(-9deg) skewX(-7deg) scaleY(.88)}50%{transform:translateY(22px) rotate(9deg) skewX(7deg) scaleY(.88)}}@keyframes sc{0%,100%{transform:rotate(-12deg) translateX(-8px)}50%{transform:rotate(12deg) translateX(8px)}}@keyframes fl{0%,100%{transform:translateX(-14px) skewX(-10deg)}50%{transform:translateX(14px) skewX(10deg)}}@keyframes wm{0%,100%{transform:translateY(30px) scale(1.3,.7)}50%{transform:translateY(30px) scale(.8,1.15) rotate(6deg)}}
+.tag{background:#e0e7ff;color:#3730a3;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:700}
+</style></head><body><div id="app"></div>
+<script>
+const PRI=[["p1","#1 Strip bed & put bedding by washer/dryer",5],["p2","#2 Pick up all things off room floor & put away",10],["p3","#3 Clean up your desk",10],["p4","#4 Make sure NOTHING is under your bed",5],["p5","#5 Vacuum your floor",10]].map(([id,t,m])=>({id,t,m}));
+const POOL=[["r1","Empty all 7 garbages & replace bags",10],["r2","Vacuum the stairs",10],["r3","Straighten couch, fix cushions & take blanket to wash",5],["r4","Wipe down kitchen table really good",5],["r5","Take out recycles & replace bag",5],["r6","Pick up dog poop outside & put in outdoor trash",10],["r7","Spray back ways with Poo-Here spray until gone",10],["r8","Sweep downstairs & vacuum up piles",10],["r9","Mop downstairs",15],["r10","Clean kids bathroom (mirror, counters, floor, tub)",15],["r11","Clean all 3 toilets inside & out with Clorox wipes",15],["r12","Pick up garbage around back and sides of house",10],["r13","Dump overnight oats jars & soak mason jars in sink",15],["r14","Wipe down mirrors in all 3 bathrooms",15],["r15","Wash dishes in sink, put on rack & clean sink",15],["r16","Wipe down kitchen counters",5],["r17","Wipe coffee bar, Keurig, under ice maker & top shelf",20],["r18","Pick up dining chairs & vacuum under table with purple vacuum",10]].map(([id,t,m])=>({id,t,m}));
+const KIDS=["Peyton","Carter"],KEY="chorequest-v1";
+const kid0=()=>({bank:0,step:0,done:0,redo:[],pair:[],chosen:null,breakEnd:0});
+let S={pin:"1234",taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};
+try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.kids)S=s}catch(e){}
+S.ld=S.ld||{start:0,lockEnd:0,last:""};S.taken=S.taken||[];S.doneIds=S.doneIds||[];
+let U={who:"Peyton",parent:false,authed:false,stage:"READ",audio:null,photo:null,rec:null,end:0,left:0,msg:""};
+let dbDoc=null,syncOn=false;
+const $=document.getElementById("app");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=n=>(n<0?"-$":"$")+Math.abs(n).toFixed(2);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+ if(dbDoc){try{dbDoc.set({json:JSON.stringify(S)}).catch(()=>{})}catch(e){}}}
+
+// --- Shared sync via Google Sheet (Apps Script web app) ---
+const SHEET_URL="https://script.google.com/macros/s/AKfycbxkdR1iPFJU6ru5zL4z8IRayRASmZUMYgh_-hvHnbX5UoMLK8ew4jq2KsztjjUf17uO/exec";
+S.synced=S.synced||[];
+function remotePush(entry){
+ S.synced=S.synced||[];
+ if(!S.synced.includes(entry.ts))S.synced.push(entry.ts);
+ S.synced=S.synced.slice(-1000);save();
+ try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
+  body:JSON.stringify({child:entry.child,chore:entry.title,earnings:entry.earned,timestamp:entry.ts})}).catch(()=>{})}catch(e){}
+}
+let pulling=false;
+async function remotePull(){
+ if(pulling)return;pulling=true;
+ try{
+  const r=await fetch(SHEET_URL);
+  if(!r.ok)return;
+  const rows=await r.json();
+  if(!Array.isArray(rows))return;
+  let changed=false;
+  rows.sort((x,y)=>Number(x[3])-Number(y[3]));
+  for(const row of rows){
+   const child=row[0],title=String(row[1]||""),earned=parseFloat(row[2])||0,ts=Number(row[3]);
+   if(!ts||!S.kids[child]||S.synced.includes(ts))continue;
+   S.synced.push(ts);changed=true;
+   const K=S.kids[child];
+   K.bank=+(K.bank+earned).toFixed(2);
+   const entry={id:"j"+ts,child,title,earned,ts,remote:1};
+   if(title.indexOf("🧺")===0){
+    entry.laundry=1;entry.seen=0;
+    const sw=title.indexOf("Switched")>=0;
+    if(!entry.seen&&!sw)entry.start=1;
+    if(ts>(S.ld.at||0))S.ld={start:ts,lockEnd:sw?ts+LL:0,last:child,at:ts};
+   }else{
+    const pi=PRI.findIndex(c=>c.t===title),ri=POOL.findIndex(c=>c.t===title);
+    const cid=pi>=0?PRI[pi].id:ri>=0?POOL[ri].id:null;
+    if(cid){entry.cid=cid;if(!S.doneIds.includes(cid))S.doneIds.push(cid)}
+    if(pi>=0&&K.step<pi+1)K.step=pi+1;
+    if(ri>=0&&!S.taken.includes(POOL[ri].id))S.taken.push(POOL[ri].id);
+    if(ri>=0&&K.chosen&&K.chosen.id===POOL[ri].id){K.chosen=null;K.pair=[]}
+    K.done++;
+   }
+   S.log.unshift(entry);S.log=S.log.slice(0,25);
+  }
+  S.synced=S.synced.slice(-1000);
+  if(changed){save();render()}
+ }catch(e){}finally{pulling=false}
+}
+setInterval(remotePull,15000);
+setTimeout(remotePull,1500);
+function cur(k){const K=S.kids[k];if(K.redo.length)return K.redo[0];if(K.step<5)return PRI[K.step];return K.chosen}
+const okC=c=>!S.taken.includes(c.id)&&(c.id!=="r9"||S.doneIds.includes("r8"));
+function newPair(K){const a=POOL.filter(okC).sort(()=>Math.random()-.5);K.pair=a.slice(0,2);K.chosen=null}
+function tick(){const now=Date.now();
+ if(U.stage==="TIMER")U.left=Math.max(0,Math.ceil((U.end-now)/1000));
+ const K=S.kids[U.who];if(K.breakEnd&&now>=K.breakEnd){K.breakEnd=0;save()}
+ const t=document.getElementById("t");if(t&&U.stage==="TIMER")t.textContent=fmt(U.left);
+ const b=document.getElementById("b");if(b&&K.breakEnd)b.textContent=fmt(Math.ceil((K.breakEnd-now)/1000));
+ if(U.stage==="TIMER"&&U.left===0&&!U.warned){U.warned=1;render()}
+ ldTick()}
+setInterval(tick,500);
+const words=s=>{const m=Math.floor(s/60),r=s%60,p=[];if(m)p.push(m+(m===1?" minute":" minutes"));if(r||!m)p.push(r+(r===1?" second":" seconds"));return p.join(" ")};
+const fmt=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+const TOTAL=14;
+function progCard(){return`<div class="ent" style="background:var(--card);margin:12px 0 0">`+KIDS.map((n,i)=>{const K=S.kids[n],d=Math.max(0,K.step-K.redo.length),p=Math.min(100,Math.round(d/TOTAL*100));return`<div style="${i?"margin-top:10px":""}"><div class="row"><b>${n}</b><span class="mu">${d} of ${TOTAL} chores</span></div><div style="height:14px;background:var(--bg);border-radius:99px;overflow:hidden;border:1px solid var(--ln)"><div style="height:100%;width:${p}%;background:${i?"#ec4899":"var(--pr)"};border-radius:99px"></div></div></div>`}).join("")+`</div>`}
+const DANCES=[{c:"🦖",l:"Dino Breakdance",a:"bd .8s linear infinite"},{c:"🐸",l:"Froggy Backflips",a:"bf .9s ease-in-out infinite"},{c:"🐧",l:"Penguin Moonwalk",a:"mw .7s ease-in-out infinite"},{c:"🐻",l:"Bear Booty Shake",a:"tw .18s ease-in-out infinite"},{c:"🤖",l:"Robot Shopping Cart",a:"sc .5s ease-in-out infinite",x:"🛒"},{c:"🦄",l:"Unicorn Floss",a:"fl .45s ease-in-out infinite"},{c:"🐛",l:"Caterpillar Worm",a:"wm .6s ease-in-out infinite"}];
+function dance(){if(matchMedia("(prefers-reduced-motion:reduce)").matches)return;const ph=["Chore CRUSHED!","Boom! Squeaky clean!","Nailed it!","Piggy bank party! 🐷","Look at you go!",U.who+" is a legend!"],p=a=>a[Math.floor(Math.random()*a.length)];
+ let d;do{d=p(DANCES)}while(d.c===U.lastD&&DANCES.length>1);U.lastD=d.c;
+ const st=`display:inline-block;line-height:1;animation:${d.a}`,o=document.createElement("div");o.style.cssText="position:fixed;inset:0;pointer-events:none;z-index:998;overflow:hidden";
+ o.innerHTML=`<div style="position:absolute;bottom:16%;left:-170px;text-align:center;animation:cross 5.5s linear forwards"><div style="background:#fff;color:#1e293b;font:700 14px system-ui;border-radius:14px;padding:6px 12px;box-shadow:0 3px 10px #0004;white-space:nowrap;margin-bottom:6px">${esc(p(ph))}<div style="font-size:11px;color:#6366f1">${d.l}</div></div><div style="white-space:nowrap"><span style="font-size:84px;${st}">${d.c}</span>${d.x?`<span style="font-size:56px;${st}">${d.x}</span>`:""}</div></div>`;
+ document.body.appendChild(o);setTimeout(()=>o.remove(),6200)}
+function party(){if(matchMedia("(prefers-reduced-motion:reduce)").matches)return;const o=document.createElement("div");o.style.cssText="position:fixed;inset:0;pointer-events:none;z-index:999;overflow:hidden";const cols=["#f43f5e","#facc15","#22c55e","#3b82f6","#a855f7","#fb923c"],r=Math.random;
+ for(let i=0;i<80;i++){const d=document.createElement("div"),w=6+r()*8;d.style.cssText=`position:absolute;top:-24px;left:${r()*100}%;width:${w}px;height:${w*1.6}px;background:${cols[i%6]};border-radius:2px;animation:fall ${2.2+r()*2}s ${r()*.8}s linear forwards`;o.appendChild(d)}
+ for(let i=0;i<30;i++){const d=document.createElement("div"),w=22+r()*40;d.style.cssText=`position:absolute;bottom:-60px;left:${r()*100}%;width:${w}px;height:${w}px;border-radius:50%;border:2px solid #ffffffcc;background:radial-gradient(circle at 30% 30%,#ffffffee,#7dd3fc55);--dx:${(r()-.5)*80}px;animation:rise ${3+r()*2.5}s ${r()*1.2}s ease-in forwards`;o.appendChild(d)}
+ document.body.appendChild(o);setTimeout(()=>o.remove(),7500)}
+const LC=45*60000,LL=45*60000;
+function ldPhase(){const L=S.ld,n=Date.now();if(!L.start)return"idle";if(n<L.start+LC)return"run";if(n<L.lockEnd)return"wait";return"ready"}
+function ldSecs(){const L=S.ld,n=Date.now(),t=ldPhase()==="run"?L.start+LC:L.lockEnd;return Math.max(0,Math.ceil((t-n)/1000))}
+function ldCard(){const p=ldPhase(),L=S.ld,last=L.last?`<div class="mu">🧺 <b>${esc(L.last)}</b> started the last load${L.at?" at "+new Date(L.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}</div>`:"";
+ const box=(t,x)=>`<div class="ent" style="background:var(--card);text-align:center;margin:12px 0 0;border:2px solid ${p==="ready"?"var(--ok)":"var(--ln)"}"><b>🧺 Laundry</b><br>${t}${last}${x||""}</div>`;
+ if(p==="idle")return box('<span class="mu">Timer not started.</span>','<button class="btn" data-a="ldstart">Start 45-minute laundry timer</button>');
+ if(p==="run")return box('Switch the laundry in <b id="ldt" style="font:900 28px ui-monospace,monospace">'+fmt(ldSecs())+'</b>');
+ if(p==="wait")return box('Laundry is done, but switching is locked for another <b id="ldt">'+fmt(ldSecs())+'</b>');
+ return box('<b style="color:var(--ok)">Time to switch the laundry!</b>',`<button class="btn g" data-a="ldclaim">Only push this button if you're the one switching the laundry (+$1.00 for ${U.who})</button>`)}
+function ldTick(){const sig=ldPhase()+S.ld.start+S.ld.lockEnd;if(sig!==U.ldSig){U.ldSig=sig;if(!U.parent&&!U.rec&&(!document.activeElement||document.activeElement.tagName!=="INPUT"))render();return}
+ const t=document.getElementById("ldt");if(t)t.textContent=fmt(ldSecs())}
+const unseen=()=>S.log.filter(e=>e.laundry&&!e.seen).length;
+function render(){
+ const K=S.kids[U.who];
+ let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small>`;
+ if(!U.parent)h+=`<div class="tabs">${KIDS.map(n=>`<button class="tab ${n===U.who?"on":""}" data-a="who" data-v="${n}">${n}</button>`).join("")}</div><div class="bank"><span>🐷 ${U.who}'s Piggy Bank</span><span>${money(K.bank)}</span></div>`;
+ h+=`</header>`+progCard()+(U.parent?"":ldCard())+`<main>`+(U.parent?parentView():kidView(K))+`</main>`;
+ $.innerHTML=h}
+function kidView(K){
+ if(K.breakEnd&&Date.now()<K.breakEnd)return`<div class="c"><div style="font-size:50px">🎉</div><h2>Break time!</h2><p class="mu">3 chores done. Rest, drink water.</p><div class="big" id="b">${fmt(Math.ceil((K.breakEnd-Date.now())/1000))}</div><button class="btn" data-a="skipbreak">Skip break</button></div>`;
+ if(K.step>=TOTAL&&!K.redo.length)return`<div class="c"><div style="font-size:50px">🏆</div><h2>All ${TOTAL} chores done!</h2><p class="mu">Great work, ${U.who}!</p></div>`;
+ if(K.step>=5&&!K.redo.length&&!K.chosen){if(!K.pair.length||K.pair.some(c=>!okC(c))){newPair(K);if(K.pair.length)save()}
+  if(!K.pair.length)return`<div class="c"><div style="font-size:44px">⏳</div><h3>No chores to pick right now</h3><p class="mu">Mop downstairs unlocks after Sweep downstairs is finished. Check back soon!</p></div>`;
+  return`<h3 class="c">Pick 1 of 2 chores:</h3>`+K.pair.map(c=>`<button class="pick" data-a="choose" data-v="${c.id}">${esc(c.t)}<div class="mu">⏰ ${c.m} min</div></button>`).join("")}
+ const c=cur(U.who);
+ let h=`<div class="chore${""}">${K.redo.length?`<span class="tag" style="background:#ffe4e6;color:#9f1239">REDO – parent sent it back</span><br>`:`<span class="mu">CURRENT CHORE</span><br>`}<b>${esc(c.t)}</b><div class="mu">${K.redo.length?"You have "+words(c.left!=null?c.left:c.m*60)+" remaining to complete this chore for your reward.":"Time limit: "+c.m+" min"}</div></div>`;
+ if(U.msg)h+=`<p class="mu">${esc(U.msg)}</p>`;
+ if(U.stage==="READ"){h+=`<p class="c mu">Read the chore, then start the timer when you are ready.</p><button class="btn g" data-a="start">Start timer & begin →</button>`}
+ else if(U.stage==="TIMER"){h+=`<div class="big" id="t">${fmt(U.left)}</div><p class="c mu">Every second left when you finish = $0.01!</p><button class="btn g" data-a="finish">I finished! Take photo →</button>`}
+ else{h+=`<p class="c mu">Step 3: Photo of your finished work.</p>${U.photo?`<img src="${U.photo}" style="width:100%;border-radius:10px">`:""}
+  <label class="btn" style="text-align:center">📷 ${U.photo?"Retake":"Take photo"}<input type="file" accept="image/*" capture="environment" data-a="photo" hidden></label>`;
+  if(U.photo)h+=`<button class="btn g" data-a="submit">Submit & claim ${money(U.left*.01)} 💰</button>`}
+ return h}
+function parentView(){
+ if(!U.authed)return`<p class="mu">Enter parent PIN:</p><input type="password" id="pin" inputmode="numeric" placeholder="••••"><button class="btn" data-a="login">Unlock</button>${U.msg?`<p class="c" style="color:var(--bad)">${esc(U.msg)}</p>`:""}`;
+ let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list.</p>`;
+ if(!S.log.length)h+=`<p class="mu"><i>Nothing submitted yet.</i></p>`;
+ for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b></div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${e.photo?`<img src="${e.photo}">`:""}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.laundry&&!e.earned?"":`<button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
+ h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="reset">${U.ask==="reset"?"⚠️ Tap again to ERASE EVERYTHING":"⚠️ Reset app (erase everything)"}</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Clears both piggy banks, all progress and the log. The PIN stays the same.</p><p class="mu c">Data is saved on this device only. Parents: review chores and laundry alerts on the same device the kids use.</p>`;
+ return h}
+const blobURL=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
+function shrink(file){return new Promise(res=>{const i=new Image();i.onload=()=>{const s=Math.min(1,480/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*s;c.height=i.height*s;c.getContext("2d").drawImage(i,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",.6))};i.src=URL.createObjectURL(file)})}
+let mr=null;
+async function toggleRec(){
+ if(U.rec){mr.stop();return}
+ try{const st=await navigator.mediaDevices.getUserMedia({audio:true});const ch=[];mr=new MediaRecorder(st,{audioBitsPerSecond:16000});
+  mr.ondataavailable=e=>ch.push(e.data);
+  mr.onstop=async()=>{st.getTracks().forEach(t=>t.stop());clearTimeout(U.rt);U.audio=await blobURL(new Blob(ch,{type:mr.mimeType}));U.rec=false;render()};
+  mr.start();U.rec=true;U.msg="";U.rt=setTimeout(()=>mr.state==="recording"&&mr.stop(),12000);render()}
+ catch(e){U.micFail=1;U.msg="Microphone is blocked here. Use the phone recorder button below.";render()}}
+function submit(){
+ const K=S.kids[U.who],c=cur(U.who),earned=+(U.left*.01).toFixed(2);
+ const entry={id:"e"+Date.now(),child:U.who,cid:c.id,title:c.t,min:c.m,earned,left:U.left,ts:Date.now(),photo:U.photo,audio:U.audio};
+ S.log.unshift(entry);
+ S.log=S.log.slice(0,25);if(!S.doneIds.includes(c.id))S.doneIds.push(c.id);K.bank=+(K.bank+earned).toFixed(2);
+ if(K.redo.length)K.redo.shift();else{K.step++;K.chosen=null;K.pair=[]}
+ K.done++;if(K.done%3===0)K.breakEnd=Date.now()+600000;
+ U.stage="READ";U.audio=U.photo=null;U.warned=0;U.msg="";save();render();dance();remotePush(entry)}
+function reject(id){
+ const e=S.log.find(x=>x.id===id);if(!e)return;const K=S.kids[e.child];
+ K.bank=+(K.bank-e.earned).toFixed(2);S.doneIds=S.doneIds.filter(x=>x!==e.cid);
+ if(!e.laundry){K.redo.push({id:e.cid,t:e.title,m:e.min||10,left:e.left});K.breakEnd=0}
+ S.log=S.log.filter(x=>x.id!==id);save();render()}
+$.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)return;const a=t.dataset.a,v=t.dataset.v,K=S.kids[U.who],asked=U.ask;U.ask=null;U.note="";
+ if(a==="pp"){U.parent=!U.parent;U.authed=false;U.msg="";render()}
+ else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=null;U.msg="";render()}
+ else if(a==="login"){if(document.getElementById("pin").value===S.pin){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
+ else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=p;save();U.note="✅ PIN saved."}else U.note="Use at least 4 digits.";render()}
+ else if(a==="choose"){if(!okC({id:v})){newPair(K)}else{S.taken.push(v);K.chosen=K.pair.find(c=>c.id===v)}save();render()}
+ else if(a==="rec")toggleRec();
+ else if(a==="start"){const c=cur(U.who),d=c.left!=null?c.left:c.m*60;U.end=Date.now()+d*1000;U.left=d;U.stage="TIMER";U.warned=0;render()}
+ else if(a==="finish"){U.left=Math.max(0,Math.ceil((U.end-Date.now())/1000));U.stage="PHOTO";render()}
+ else if(a==="submit")submit();
+ else if(a==="skipbreak"){K.breakEnd=0;save();render()}
+ else if(a==="reset"){if(asked==="reset"){S={pin:S.pin,synced:S.synced||[],taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=null;U.warned=0;save();U.note="✅ App reset.";render()}else{U.ask="reset";render()}}
+ else if(a==="ack"){S.log.forEach(e=>{if(e.laundry)e.seen=1});save();render()}
+ else if(a==="ldstart"){const le={id:"l"+Date.now(),child:U.who,title:"🧺 Started the laundry",earned:0,ts:Date.now(),laundry:1,seen:0,start:1};S.ld={start:Date.now(),lockEnd:0,last:U.who,at:Date.now()};S.log.unshift(le);S.log=S.log.slice(0,25);save();party();render();remotePush(le)}
+ else if(a==="ldclaim"){if(ldPhase()==="ready"){const n=Date.now();const le={id:"l"+n,child:U.who,title:"🧺 Switched the laundry",earned:1,ts:n,laundry:1,seen:0};S.ld={start:n,lockEnd:n+LL,last:U.who,at:n};K.bank=+(K.bank+1).toFixed(2);S.log.unshift(le);S.log=S.log.slice(0,25);save();party();remotePush(le)}render()}
+ else if(a==="reject"){if(asked==="rej"+v)reject(v);else{U.ask="rej"+v;render()}}});
+$.addEventListener("change",async ev=>{if(ev.target.dataset.a==="audiofile"&&ev.target.files[0]){const f=ev.target.files[0];if(f.size>600000){U.msg="That recording is too long. Record just a few seconds.";render();return}U.audio=await blobURL(f);U.msg="";render();return}if(ev.target.dataset.a==="photo"&&ev.target.files[0]){U.photo=await shrink(ev.target.files[0]);render()}});
+render();
+(async()=>{try{const db=await claude.use("db");if(!db)return;dbDoc=db.doc("chorequest/state");
+ dbDoc.onSnapshot(s=>{if(s.exists&&s.data()&&s.data().json&&!s.metadata.hasPendingWrites){try{const n=JSON.parse(s.data().json);if(n&&n.kids){n.ld=n.ld||{start:0,lockEnd:0,last:""};n.taken=n.taken||[];n.doneIds=n.doneIds||[];S=n;localStorage.setItem(KEY,JSON.stringify(S));if(!U.rec&&U.stage!=="TIMER"&&document.activeElement.tagName!=="INPUT")render()}}catch(e){}}else if(!s.exists)save()});
+ syncOn=true}catch(e){}})();
+</script></body></html>
