@@ -34,7 +34,7 @@ input[type=password],input[type=text]{width:100%;padding:12px;border:1px solid v
 const PRI=[["p1","#1 Strip bed & put bedding by washer/dryer",5],["p2","#2 Pick up all things off room floor & put away",10],["p3","#3 Clean up your desk",10],["p4","#4 Make sure NOTHING is under your bed",5],["p5","#5 Vacuum your floor",10]].map(([id,t,m])=>({id,t,m,t0:t}));
 const POOL=[["r1","Empty all 7 garbages & replace bags",10],["r2","Vacuum the stairs",10],["r3","Straighten couch, fix cushions & take blanket to wash",5],["r4","Wipe down kitchen table really good",5],["r5","Take out recycles & replace bag",5],["r6","Pick up dog poop outside & put in outdoor trash",10],["r7","Spray back ways with Poo-Here spray until gone",10],["r8","Sweep downstairs & vacuum up piles",10],["r9","Mop downstairs",15],["r10","Clean kids bathroom (mirror, counters, floor, tub)",15],["r11","Clean all 3 toilets inside & out with Clorox wipes",15],["r12","Pick up garbage around back and sides of house",10],["r13","Dump overnight oats jars & soak mason jars in sink",15],["r14","Wipe down mirrors in all 3 bathrooms",15],["r15","Wash dishes in sink, put on rack & clean sink",15],["r16","Wipe down kitchen counters",5],["r17","Wipe coffee bar, Keurig, under ice maker & top shelf",20],["r18","Pick up dining chairs & vacuum under table with purple vacuum",10]].map(([id,t,m])=>({id,t,m,t0:t}));
 const KIDS=["Peyton","Carter"],KEY="chorequest-v1";
-const kid0=()=>({bank:0,step:0,done:0,redo:[],pair:[],chosen:null,breakEnd:0});
+const kid0=()=>({bank:0,step:0,done:0,rolls:0,redo:[],pair:[],chosen:null,breakEnd:0});
 let S={pin:"1234",taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};
 try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.kids)S=s}catch(e){}
 S.ld=S.ld||{start:0,lockEnd:0,last:""};S.taken=S.taken||[];S.doneIds=S.doneIds||[];
@@ -75,6 +75,7 @@ async function remotePull(){
    if(!/^https?:/.test(photoUrl))photoUrl="";if(!/^https?:/.test(photo0))photo0="";
    if(!ts||S.synced.includes(ts))continue;
    if(child==="PLAN"){S.synced.push(ts);changed=true;try{applyPlan(title==="OFF"?null:JSON.parse(title),ts)}catch(e){}continue}
+   if(child==="RESET"){S.synced.push(ts);changed=true;wipe();continue}
    if(child==="CHORE"){S.synced.push(ts);changed=true;try{if(title.indexOf("DEL|")===0){const dt=title.slice(4).toLowerCase();S.custom=lib().filter(x=>x.t.toLowerCase()!==dt)}else if(title.indexOf("EDIT|")===0){const ed=JSON.parse(title.slice(5));applyEdit(String(ed.k),String(ed.t).slice(0,80),Number(ed.m)||10)}else{const c=JSON.parse(title);if(c&&c.t&&!lib().some(x=>x.t.toLowerCase()===String(c.t).toLowerCase()))lib().push({t:String(c.t).slice(0,80),m:Number(c.m)||15})}}catch(e){}continue}
    if(!S.kids[child])continue;
    S.synced.push(ts);changed=true;
@@ -84,6 +85,8 @@ async function remotePull(){
     if(ex)doReject(ex,note);
     continue;
    }
+   if(/^(ROLL|MOVE)\|/.test(title)){try{applyGame(child,title,ts)}catch(e){}continue}
+   if(title.indexOf("APPROVE|")===0){const at=Number(title.slice(8)),ae=S.log.find(x=>x.ts===at);if(ae&&ae.first&&!ae.ok)applyApprove(ae);continue}
    K.bank=+(K.bank+earned).toFixed(2);
    const entry={id:"j"+ts,child,title,earned,ts,remote:1};if(photoUrl)entry.photo=photoUrl;if(photo0)entry.photo0=photo0;
    if(title.indexOf("🧺")===0){
@@ -93,7 +96,8 @@ async function remotePull(){
     if(ts>(S.ld.at||0))S.ld={start:ts,lockEnd:sw?ts+LL:0,last:child,at:ts};
    }else{
     const pit=S.plan&&(S.plan.items.find(i=>i.t===title&&i.who===child&&!S.doneIds.includes(i.id))||S.plan.items.find(i=>i.t===title&&i.who==="either"&&!S.doneIds.includes(i.id)));
-    if(K.redo.some(r=>r.t===title))K.redo=K.redo.filter(r=>r.t!==title);
+    const rd=K.redo.find(r=>r.t===title),rl=(!rd||rd.rr)?1:0;entry.first=rd?0:1;entry.rolled=rl;K.rolls=(K.rolls||0)+rl;
+    if(rd)K.redo=K.redo.filter(r=>r.t!==title);
     if(pit){entry.cid=pit.id;S.doneIds.push(pit.id);if(pit.who==="either"&&!S.taken.includes(pit.id))S.taken.push(pit.id);if(K.chosen&&K.chosen.id===pit.id){K.chosen=null;K.pair=[]}}
     else{
      const pi=PRI.findIndex(c=>c.t===title||c.t0===title),ri=POOL.findIndex(c=>c.t===title||c.t0===title);
@@ -129,6 +133,109 @@ function pushRow(child,chore){let ts=Date.now();while(S.synced.includes(ts))ts++
 function addLib(t,m){if(lib().some(x=>x.t.toLowerCase()===t.toLowerCase()))return;lib().push({t,m});save();pushRow("CHORE",JSON.stringify({t,m}))}
 function delLib(t){S.custom=lib().filter(x=>x.t.toLowerCase()!==t.toLowerCase());save();pushRow("CHORE","DEL|"+t)}
 function applyQ(){const q=(U.q||"").trim().toLowerCase();let n=0,t=0;document.querySelectorAll("[data-ct]").forEach(el=>{t++;const m=!q||el.dataset.ct.includes(q);el.style.display=m?"":"none";if(m)n++});const c=document.getElementById("cc");if(c)c.textContent=q?n+" of "+t+" chores match"+(n?"":". Not found? Add it at the bottom."):""}
+function wipe(){S={pin:S.pin,synced:S.synced||[],plan:null,planAt:S.planAt||0,custom:lib(),ov:S.ov||{},game:null,taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;U.msg="";U.cmt={};U.turn=null;U.flash="";save()}
+const navKey=()=>[U.who,U.parent?1:0,U.edit?1:0,U.resetPage?1:0].join()+(U.view==="game"&&!U.parent?",g":"");
+function nav(){const k=navKey();if(U.navk===undefined){try{history.replaceState({k},"")}catch(e){}U.navk=k;return}if(k!==U.navk){try{history.pushState({k},"")}catch(e){}U.navk=k}}
+window.addEventListener("popstate",e=>{
+ if(!U.parent&&(U.stage==="TIMER"||U.stage==="PHOTO")){try{history.pushState({k:U.navk},"")}catch(x){}U.msg="Back is paused while a chore is in progress. Finish the chore first.";render();return}
+ const k=(e.state&&e.state.k)||"Peyton,0,0,0",a=k.split(","),wasP=U.parent;
+ U.navk=k;U.view=a[4]==="g"?"game":"chores";if(KIDS.includes(a[0]))U.who=a[0];U.parent=a[1]==="1";U.edit=U.parent&&a[2]==="1";U.resetPage=U.parent&&a[3]==="1";U.ed="";U.ask=null;
+ if(!U.parent||!wasP)U.authed=false;
+ render()});
+// ---- Soccer Quest game
+const GOAL=35,COLS=["red","orange","yellow","green","blue","purple"],CC={red:"#ef4444",orange:"#fb923c",yellow:"#facc15",green:"#22c55e",blue:"#3b82f6",purple:"#a855f7"};
+const SQ={3:"color",9:"color",16:"color",21:"color",28:"color",34:"color",4:"surprise",10:"surprise",17:"surprise",23:"surprise",29:"surprise",6:"fact",13:"fact",20:"fact",27:"fact",32:"fact",8:"word",15:"word",22:"word",30:"word",12:"pen",25:"pen",33:"pen"};
+const sqType=i=>i<=0?"start":i>=GOAL?"goal":SQ[i]||"plain",sqColor=i=>COLS[i%6];
+const gm=()=>S.game||(S.game={pos:{Peyton:0,Carter:0},goals:{Peyton:0,Carter:0},feed:[]});
+const SURP=[{x:"🧙 Magic boots! Move forward 3.",m:3},{x:"📚 You finished a great chapter! Move forward 2.",m:2},{x:"⚽ Free kick! Move forward 4.",m:4},{x:"🦉 An owl brings a note: you get a bonus roll!",t:1},{x:"🤝 Perfect pass! You AND your teammate move forward 2.",m:2,b:2},{x:"🧤 Great save! Move forward 1 and take a bonus roll.",m:1,t:1},{x:"🎉 The crowd goes wild! Move forward 5.",m:5},{x:"🐉 A friendly dragon gives you a ride! Move forward 3.",m:3}];
+const FACTS=[
+["How many players does one team have on the field in a soccer match?","11","9","10","12","Each team plays with 11 players, including the goalkeeper."],
+["Which country has won the most men's World Cup titles?","Brazil","Germany","Italy","Argentina","Brazil has won more men's World Cups than any other country."],
+["How long is a regular soccer match, not counting extra time?","90 minutes","60 minutes","75 minutes","120 minutes","Two halves of 45 minutes, plus a little added time."],
+["What does a referee show a player who must leave the game?","A red card","A yellow card","A green card","A blue card","A red card means the player is sent off."],
+["A 'hat trick' in soccer means one player scored how many goals?","3","2","4","5","Three goals by one player in one game is a hat trick."],
+["The patches on a classic soccer ball are shaped like what?","Pentagons and hexagons","Circles and squares","Triangles","Stars","A classic ball has 12 pentagons and 20 hexagons."],
+["Who is the only player on a soccer team allowed to use their hands during play?","The goalkeeper","The striker","The captain","The referee","Goalkeepers can use their hands inside their own penalty area."],
+["Which country hosted the 2022 men's World Cup?","Qatar","Brazil","Russia","Japan","The 2022 World Cup was played in Qatar."],
+["Which planet is closest to the Sun?","Mercury","Venus","Mars","Earth","Mercury is the closest planet to the Sun."],
+["How many legs does an insect have?","6","4","8","10","All insects have six legs."],
+["Which is the largest ocean on Earth?","Pacific","Atlantic","Indian","Arctic","The Pacific Ocean covers about a third of the planet."],
+["About how many bones are in an adult human body?","206","106","306","56","Babies are born with more bones that fuse together as they grow."],
+["What is the tallest animal in the world?","Giraffe","Elephant","Camel","Ostrich","A giraffe can be about 18 feet tall."],
+["What is the capital city of Australia?","Canberra","Sydney","Melbourne","Perth","Many people guess Sydney, but Canberra is the capital."],
+["Which gas do plants take in from the air?","Carbon dioxide","Oxygen","Helium","Nitrogen","Plants use carbon dioxide to make food and give off oxygen."],
+["How many continents are there?","7","5","6","8","The seven continents are Africa, Antarctica, Asia, Australia, Europe, North America and South America."],
+["What is the hardest natural material?","Diamond","Gold","Iron","Glass","Diamond is the hardest natural material on Earth."],
+["Which planet is the biggest?","Jupiter","Saturn","Neptune","Earth","Jupiter is bigger than all the other planets put together."],
+["How many hearts does an octopus have?","3","1","2","4","An octopus has three hearts."],
+["What is the largest bird in the world?","Ostrich","Eagle","Penguin","Swan","Ostriches can't fly, but they can run very fast."],
+["How many strings does a standard guitar have?","6","4","5","8","Most guitars have six strings."],
+["In a thunderstorm, which do you notice first?","Lightning","Thunder","They arrive at exactly the same time","Wind","Light travels much faster than sound."],
+["How many sides does a hexagon have?","6","5","7","8","Hex means six."],
+["What is the biggest animal ever known to live on Earth?","Blue whale","Elephant","T. rex","Great white shark","The blue whale is the largest animal known."],
+["Where is the Great Barrier Reef?","Australia","Brazil","Spain","Japan","It is the largest coral reef system in the world."],
+["What is the chemical formula for water?","H2O","CO2","O2","NaCl","Each water molecule has two hydrogen atoms and one oxygen atom."],
+["Which is the only mammal that can truly fly?","Bat","Flying squirrel","Sugar glider","Owl","Flying squirrels only glide. Bats really fly."],
+["In the story Charlotte's Web, what kind of animal is Charlotte?","A spider","A pig","A goose","A rat","Charlotte is a spider who saves her friend Wilbur."],
+["Library books about real facts are called what?","Nonfiction","Fiction","Fantasy","Poetry","Fiction is made up. Nonfiction is true."],
+["A book about a person's life, written by someone else, is called what?","A biography","An autobiography","A novel","A dictionary","An autobiography is written by the person themselves."],
+["A word that means the opposite of another word is called what?","An antonym","A synonym","A homophone","An acronym","Hot and cold are antonyms."],
+["How many days are in a leap year?","366","364","365","367","February gets an extra day, the 29th."],
+["What is the name of Earth's natural satellite?","The Moon","Phobos","Europa","Sirius","The Moon travels around the Earth."],
+["What is a group of lions called?","A pride","A herd","A pack","A flock","A pride of lions can have a dozen or more members."],
+["What is a baby kangaroo called?","A joey","A cub","A pup","A kit","A joey lives in its mother's pouch."],
+["Which planet is called the Red Planet?","Mars","Venus","Saturn","Mercury","Mars looks red because of rusty iron in its soil."],
+["What is the largest land animal?","African elephant","Giraffe","Hippo","Rhino","African elephants can weigh as much as six tons."],
+["What part of a plant takes in water from the soil?","Roots","Leaves","Petals","Seeds","Roots also hold the plant in the ground."],
+["What do we call animals that eat only plants?","Herbivores","Carnivores","Omnivores","Insectivores","Cows, deer and rabbits are herbivores."],
+["Which is the smallest planet in our solar system?","Mercury","Mars","Venus","Earth","Mercury is even smaller than Jupiter's moon Ganymede and Saturn's moon Titan."],
+["What do bees collect from flowers to make honey?","Nectar","Sap","Water","Dew","Bees carry nectar back to the hive and turn it into honey."]];
+const WORDS=[["GOAL","what you score in soccer"],["KICK","what you do to the ball"],["STRIKER","a player who scores goals"],["WHISTLE","the referee blows it"],["DEFENDER","a player who protects the goal"],["CAPTAIN","the leader of the team"],["STADIUM","where big games are played"],["DRIBBLE","move the ball with your feet"],["CORNER","a kick from the edge of the field"],["PENALTY","a free shot at the goal"],["GOALKEEPER","guards the net"],["TEAMWORK","working together"],["VICTORY","winning"],["CHAMPION","the winner"],["TROPHY","a prize cup"],["LIBRARY","a place full of books"],["CHAPTER","part of a book"],["ADVENTURE","an exciting journey"],["MYSTERY","a story with a puzzle to solve"],["DRAGON","a fire-breathing creature"],["CASTLE","a big stone fortress"],["POTION","a magical drink"],["WIZARD","someone who does magic"],["MAGIC","spells and wands"],["TREASURE","hidden riches"],["JOURNEY","a long trip"],["FOREST","lots of trees"],["PLANET","Earth is one"],["ROCKET","it flies to space"],["FRIEND","someone you like and trust"],["COURAGE","being brave"],["IMAGINE","make a picture in your mind"],["DICTIONARY","a book of word meanings"],["AUTHOR","the writer of a book"],["PUZZLE","a game to solve"],["STORY","a tale with a beginning, middle and end"],["READING","what you do with a book"],["SPELLING","putting letters in the right order"]];
+function pickFact(){const f=FACTS[Math.floor(Math.random()*FACTS.length)],o=[f[1]].concat(f.slice(2,5));for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]]}return{q:f[0],o,c:o.indexOf(f[1]),f:f[5]}}
+function pickWord(){const w=WORDS[Math.floor(Math.random()*WORDS.length)],a=w[0].split("");let type=Math.random()<.5?"scramble":"blank",show="";
+ if(type==="scramble"){const s=a.slice();let n=0;do{for(let i=s.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s[i],s[j]]=[s[j],s[i]]}n++}while(s.join("")===w[0]&&n<20);if(s.join("")===w[0])type="blank";else show=s.join(" ")}
+ if(type==="blank"){const pos=[];for(let i=1;i<a.length-1;i++)pos.push(i);for(let i=pos.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pos[i],pos[j]]=[pos[j],pos[i]]}const idx=pos.slice(0,a.length>=7?2:1);show=a.map((c,i)=>idx.includes(i)?"_":c).join(" ")}
+ return{w:w[0],h:w[1],type,show}}
+function applyGame(child,title,ts){const i=title.indexOf("|"),kind=title.slice(0,i),e=JSON.parse(title.slice(i+1)),G=gm(),K=S.kids[child];
+ if(kind==="ROLL")K.rolls=Math.max(0,(K.rolls||0)-1);
+ G.pos[child]=e.p;if(e.g)G.goals[child]=(G.goals[child]||0)+1;
+ if(e.o!=null){const ot=KIDS.find(n=>n!==child);G.pos[ot]=Math.min(GOAL-1,e.o)}
+ if(e.tok)K.rolls=(K.rolls||0)+e.tok;
+ G.feed.unshift({k:child,x:e.x,ts:ts||Date.now()});G.feed=G.feed.slice(0,12)}
+function gameEvent(k,kind,payload){const t=kind+"|"+JSON.stringify(payload);applyGame(k,t,Date.now());pushRow(k,t)}
+function applyApprove(e){e.ok=1;e.bonus=1;const K=S.kids[e.child];K.rolls=(K.rolls||0)+1}
+function doRoll(k){const K=S.kids[k],G=gm();if((K.rolls||0)<=0)return;
+ const from=G.pos[k],d=1+Math.floor(Math.random()*6);let p=from+d,x=k+" rolled a "+d,tok=0,o=null;const T={k,d,from,stage:"done",text:""};
+ if(p<GOAL){const t=sqType(p);
+  if(t==="color"){const c=COLS[Math.floor(Math.random()*6)];let n=p+1;while(n<GOAL&&sqColor(n)!==c)n++;p=n;T.text="🎨 Color card: "+c.toUpperCase()+"! Zoom ahead to the next "+c+" square.";x+=" and drew a "+c+" color card"}
+  else if(t==="surprise"){const cd=SURP[Math.floor(Math.random()*SURP.length)];p+=cd.m||0;tok=cd.t||0;if(cd.b){const ot=KIDS.find(n=>n!==k);o=G.pos[ot]+cd.b}T.text="🎁 "+cd.x;x+=": "+cd.x}
+  else if(t==="fact"){T.stage="fact";T.q=pickFact();T.text="🧠 True fact quiz!"}
+  else if(t==="word"){T.stage="word";T.q=pickWord();T.text="🔤 Word challenge!"}
+  else if(t==="pen"){T.stage="pen";T.text="⚽ Penalty kick! Pick a corner."}}
+ let g=0;if(p>=GOAL){g=1;p=0;T.text=(T.text?T.text+" ":"")+"⚽🥅 GOAL!!!";x+=" and SCORED A GOAL!";if(T.stage!=="done")T.stage="done"}
+ T.p=p;U.turn=T;gameEvent(k,"ROLL",{d,p,g,o,tok,x})}
+function finishQuiz(k,ok,msg,n){const G=gm();let p=G.pos[k],g=0,x;U.turn.stage="done";U.turn.res=msg;if(!ok)return;
+ p+=(n||2);x=k+" got it right and moved ahead "+(n||2)+"!";if(p>=GOAL){g=1;p=0;x+=" ⚽🥅 GOAL!!!"}
+ gameEvent(k,"MOVE",{p,g,x})}
+function boardHtml(){const G=gm(),ic={start:"🏁",goal:"🥅",color:"🎨",surprise:"🎁",fact:"🧠",word:"🔤",pen:"⚽",plain:""},pc={Peyton:"#1d4ed8",Carter:"#db2777"};
+ let h='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;background:#166534;padding:8px;border-radius:14px;border:3px solid #ffffff55;margin-top:10px">';
+ for(let ri=0;ri<6;ri++){const pr=5-ri;for(let c=0;c<6;c++){const i=pr*6+(pr%2===0?c:5-c),t=sqType(i);
+  const pcs=KIDS.filter(n=>G.pos[n]===i).map(n=>`<span style="width:18px;height:18px;border-radius:50%;background:${pc[n]};color:#fff;font:700 11px system-ui;display:flex;align-items:center;justify-content:center;border:2px solid #fff">${n[0]}</span>`).join("");
+  h+=`<div style="aspect-ratio:1;border-radius:8px;background:${CC[sqColor(i)]};position:relative;display:flex;align-items:center;justify-content:center;font-size:20px;border:2px solid ${t==="plain"?"#ffffff55":"#fff"}"><span style="position:absolute;top:1px;left:3px;font-size:9px;color:#000a">${i}</span>${ic[t]}<div style="position:absolute;bottom:0;right:0;display:flex">${pcs}</div></div>`}}
+ return h+"</div>"}
+function turnHtml(T){const face="⚀⚁⚂⚃⚄⚅"[T.d-1];
+ let h=`<div class="ent c" style="background:var(--bg)"><div style="font-size:54px">${face}</div><b>${esc(T.k)} rolled a ${T.d}!</b>${T.text?`<div style="margin-top:6px">${esc(T.text)}</div>`:""}`;
+ if(T.stage==="fact")h+=`<div style="margin-top:10px;text-align:left"><b>${esc(T.q.q)}</b></div>`+T.q.o.map((o,i)=>`<button class="pick" data-a="qans" data-v="${i}">${esc(o)}</button>`).join("")+`<div class="mu">Right answer = move ahead 2 more!</div><button class="btn s" data-a="qskip">Skip</button>`;
+ else if(T.stage==="word")h+=`<div style="margin-top:10px"><div class="mu">Hint: ${esc(T.q.h)}</div><div style="font:900 30px ui-monospace,monospace;letter-spacing:4px;margin:8px 0">${esc(T.q.show)}</div><div class="mu">${T.q.type==="scramble"?"Unscramble the letters":"Fill in the missing letters"} and type the word:</div><input type="text" id="wa" autocomplete="off" autocapitalize="characters" placeholder="Your answer"><button class="btn g" data-a="wans">Check my answer</button><button class="btn s" data-a="qskip">Skip</button></div>`;
+ else if(T.stage==="pen")h+=`<div style="margin-top:10px">`+["⬅️ Left","⬆️ Middle","➡️ Right"].map((l,i)=>`<button class="pick" style="text-align:center" data-a="pen" data-v="${i}">${l}</button>`).join("")+`</div>`;
+ else{if(T.res)h+=`<div style="margin-top:8px"><b>${esc(T.res)}</b></div>`;h+=`<button class="btn" data-a="turnok">Got it!</button>`}
+ return h+`</div>`}
+function gameView(K){const G=gm(),k=U.who,r=K.rolls||0,T=U.turn;
+ let h=`<div class="row" style="align-items:center"><b>⚽ Peyton ${G.goals.Peyton||0}</b><span class="mu">Soccer Quest</span><b>${G.goals.Carter||0} Carter ⚽</b></div>`+boardHtml()+`<div class="mu c" style="margin-top:6px">🎨 color card · 🎁 surprise · 🧠 true fact · 🔤 word · ⚽ penalty kick · 🥅 goal</div>`;
+ if(T&&T.k===k)h+=turnHtml(T);
+ else h+=r>0?`<button class="btn g" data-a="roll">🎲 Roll the dice! (${r} ready)</button>`:`<div class="ent c"><b>No rolls right now</b><div class="mu">Finish a chore to earn a roll. If a parent approves a chore the first time, you get a bonus roll!</div></div>`;
+ h+=`<div class="mu" style="margin-top:10px"><b>Latest moves</b></div>`+(G.feed.length?G.feed.slice(0,5).map(f=>`<div class="mu">${esc(f.x)}</div>`).join(""):`<div class="mu"><i>No moves yet. Be the first!</i></div>`);return h}
+function gameBox(){const G=gm();return`<div class="ent" style="background:var(--bg)"><b>⚽ Soccer Quest</b><div class="mu">${KIDS.map(n=>{const r=S.kids[n].rolls||0,g=G.goals[n]||0;return n+": "+g+" goal"+(g===1?"":"s")+", square "+G.pos[n]+", "+r+" roll"+(r===1?"":"s")+" ready"}).join("<br>")}</div></div>`}
 const SELS="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--card);color:var(--tx);font-size:15px";
 function applyEdit(k,t,m){
  if(k.indexOf("T:")===0){const ot=k.slice(2).toLowerCase(),c=lib().find(x=>x.t.toLowerCase()===ot);if(c){c.t=t;c.m=m}
@@ -187,8 +294,10 @@ function render(){
  const K=S.kids[U.who];
  let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small>`;
  if(!U.parent)h+=`<div class="tabs">${KIDS.map(n=>`<button class="tab ${n===U.who?"on":""}" data-a="who" data-v="${n}">${n}</button>`).join("")}</div><div class="bank"><span>🐷 ${U.who}'s Piggy Bank</span><span>${money(K.bank)}</span></div>`;
- h+=`</header>`+progCard()+(U.parent?"":ldCard())+`<main>`+(U.parent?parentView():kidView(K))+`</main>`;
- $.innerHTML=h}
+const gv=!U.parent&&U.view==="game";
+ if(!U.parent)h+=`<div class="tabs"><button class="tab ${gv?"":"on"}" data-a="view" data-v="chores">📋 Chores</button><button class="tab ${gv?"on":""}" data-a="view" data-v="game">🎮 Game${(K.rolls||0)?" · "+K.rolls+" 🎲":""}</button></div>`;
+ h+=`</header>`+(gv?"":progCard()+(U.parent?"":ldCard()))+`<main>`+(U.flash&&!U.parent&&!gv?`<div class="ent" style="background:#ecfdf5;color:#065f46;border-color:#059669;margin:0 0 10px">${esc(U.flash)}</div>`:"")+(U.parent?parentView():gv?gameView(K):kidView(K))+`</main>`;
+ $.innerHTML=h;nav()}
 function kidView(K){
  if(K.breakEnd&&Date.now()<K.breakEnd)return`<div class="c"><div style="font-size:50px">🎉</div><h2>Break time!</h2><p class="mu">3 chores done. Rest, drink water.</p><div class="big" id="b">${fmt(Math.ceil((K.breakEnd-Date.now())/1000))}</div><button class="btn" data-a="skipbreak">Skip break</button></div>`;
  if(!S.plan&&K.step>=TOTAL&&!K.redo.length)return`<div class="c"><div style="font-size:50px">🏆</div><h2>All ${TOTAL} chores done!</h2><p class="mu">Great work, ${U.who}!</p></div>`;
@@ -207,12 +316,15 @@ function kidView(K){
  return h}
 function parentView(){
  if(!U.authed)return`<p class="mu">Enter parent PIN:</p><input type="password" id="pin" inputmode="numeric" placeholder="••••"><button class="btn" data-a="login">Unlock</button>${U.msg?`<p class="c" style="color:var(--bad)">${esc(U.msg)}</p>`:""}`;
+ if(U.resetPage)return resetPage();
  if(U.edit)return planEditor();
- let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
+ let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+gameBox()+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
  if(!S.log.length)h+=`<p class="mu"><i>Nothing submitted yet.</i></p>`;
- for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b></div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${photosHtml(e)}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.laundry&&!e.earned?"":`<input type="text" data-cm="${e.id}" maxlength="200" placeholder="Comment for ${esc(e.child)} (optional)" value="${esc(U.cmt&&U.cmt[e.id]||"")}" style="margin-top:8px;font-size:15px;text-align:left"><button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
- h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="reset">${U.ask==="reset"?"⚠️ Tap again to ERASE EVERYTHING":"⚠️ Reset app (erase everything)"}</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Clears both piggy banks, all progress and the log. The PIN stays the same.</p><p class="mu c">Data is saved on this device only. Parents: review chores and laundry alerts on the same device the kids use.</p>`;
+ for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b></div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${photosHtml(e)}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.first&&!e.ok&&!e.laundry?`<button class="btn g" data-a="approve" data-v="${e.id}">✅ Approve: bonus roll for ${esc(e.child)}</button>`:""}${e.ok?`<div class="mu" style="margin-top:6px">✅ Approved, bonus roll given</div>`:""}${e.laundry&&!e.earned?"":`<input type="text" data-cm="${e.id}" maxlength="200" placeholder="Comment for ${esc(e.child)} (optional)" value="${esc(U.cmt&&U.cmt[e.id]||"")}" style="margin-top:8px;font-size:15px;text-align:left"><button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
+ h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="resetpage">⚠️ Reset app for everyone…</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Resets the app on every phone. You will be asked to confirm first.</p><p class="mu c">Chores, photos and the laundry timer sync across all phones automatically.</p>`;
  return h}
+function resetPage(){const P=S.kids.Peyton,C=S.kids.Carter;
+ return`<h3 style="margin:0;color:var(--bad)">⚠️ Reset ChoreQuest for EVERYONE?</h3><p class="mu">This erases the following on <b>every phone</b> using the app, within a few seconds. It cannot be undone.</p><div class="ent"><div>💰 Piggy banks: Peyton ${money(P.bank)}, Carter ${money(C.bank)}</div><div>✅ All chore progress and the completed-chores list</div><div>📅 The weekend plan${S.plan?" (currently ON)":""}</div><div>🧺 The laundry timer and any chores kids have picked</div></div><div class="ent" style="background:var(--bg)"><b>Stays the same:</b><div class="mu">Your PIN, chores you added or edited, photos in Google Drive, and the rows in your Google Sheet.</div></div><p class="mu">Type the word <b>RESET</b> to confirm:</p><input type="text" id="rc" autocomplete="off" autocapitalize="characters" placeholder="RESET">${U.rmsg?`<p class="c" style="color:var(--bad)"><b>${esc(U.rmsg)}</b></p>`:""}<button class="btn r" data-a="resetgo">Yes, erase everything for everyone</button><button class="btn" data-a="resetno">Cancel, keep everything</button>`}
 function photosHtml(e){const a=[["Before",e.photo0],["After",e.photo]].filter(x=>x[1]);if(!a.length)return"";return`<div class="row" style="margin-top:6px;align-items:flex-start">`+a.map(([l,u])=>`<div style="flex:1;min-width:0"><div class="mu">${l}</div><img style="margin-top:2px" src="${pic(u)}" referrerpolicy="no-referrer"></div>`).join("")+`</div>`}
 const WHO=[["either","Shared (either kid, first come first served)"],["Peyton","Peyton"],["Carter","Carter"],["","Not this weekend"],["both","Both kids (each one does it)"]];
 function planBox(){
@@ -251,7 +363,9 @@ async function toggleRec(){
  catch(e){U.micFail=1;U.msg="Microphone is blocked here. Use the phone recorder button below.";render()}}
 function submit(){
  const K=S.kids[U.who],c=cur(U.who),earned=rate(U.left);
- const entry={id:"e"+Date.now(),child:U.who,cid:c.id,title:c.t,min:c.m,earned,left:U.left,ts:Date.now(),photo:U.photo,photo0:U.photo0,audio:U.audio};
+ const isRedo=K.redo.length>0,rolled=(!isRedo||c.rr)?1:0;
+ const entry={id:"e"+Date.now(),child:U.who,cid:c.id,title:c.t,min:c.m,earned,left:U.left,ts:Date.now(),photo:U.photo,photo0:U.photo0,audio:U.audio,first:isRedo?0:1,rolled};
+ K.rolls=(K.rolls||0)+rolled;U.flash=rolled?"🎲 +1 roll earned! Open the Game tab to use it."+(isRedo?"":" A parent can approve this chore for a bonus roll!"):"";
  S.log.unshift(entry);
  S.log=S.log.slice(0,25);if(!S.doneIds.includes(c.id))S.doneIds.push(c.id);K.bank=+(K.bank+earned).toFixed(2);
  if(K.redo.length)K.redo.shift();else{K.step++;K.chosen=null;K.pair=[]}
@@ -268,20 +382,32 @@ function reject(id){
 function doReject(e,note){
  const K=S.kids[e.child];
  K.bank=+(K.bank-e.earned).toFixed(2);S.doneIds=S.doneIds.filter(x=>x!==e.cid);
- if(!e.laundry){const ch=PRI.concat(POOL).concat(S.plan?S.plan.items:[]).find(x=>x.id===e.cid);K.redo.push({id:e.cid,t:e.title,m:e.min||(ch?ch.m:10),left:e.left,note:note||""});K.breakEnd=0}
+ if(!e.laundry){const ch=PRI.concat(POOL).concat(S.plan?S.plan.items:[]).find(x=>x.id===e.cid);const tb=(e.rolled||0)+(e.bonus||0),tk=Math.min(K.rolls||0,tb);K.rolls=(K.rolls||0)-tk;K.redo.push({id:e.cid,t:e.title,m:e.min||(ch?ch.m:10),left:e.left,note:note||"",rr:e.rolled>0&&tk===tb});K.breakEnd=0}
  S.log=S.log.filter(x=>x.id!==e.id);K.done=Math.max(0,K.done-1);save()}
 $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)return;const a=t.dataset.a,v=t.dataset.v,K=S.kids[U.who],asked=U.ask;U.ask=null;U.note="";U.pnote="";if(a==="photo"||a==="photo0")U.cam=Date.now();
- if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.msg="";render()}
- else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=U.photo0=null;U.msg="";render()}
+ if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.resetPage=false;U.msg="";render()}
+ else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=U.photo0=null;U.msg="";U.turn=null;U.flash="";render()}
  else if(a==="login"){if(document.getElementById("pin").value===S.pin){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
  else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=p;save();U.note="✅ PIN saved."}else U.note="Use at least 4 digits.";render()}
  else if(a==="choose"){if(!okC(poolList().find(c=>c.id===v)||{id:v})){newPair(K)}else{S.taken.push(v);K.chosen=K.pair.find(c=>c.id===v)}save();render()}
  else if(a==="rec")toggleRec();
- else if(a==="start"){if(!U.photo0){U.msg="Take the before photo first.";render();return}const c=cur(U.who),d=c.left!=null?c.left:c.m*60;U.end=Date.now()+d*1000;U.left=d;U.d0=d;U.need=Math.min(d,Math.ceil(c.m*60/3));U.stage="TIMER";U.warned=0;U.msg="";render()}
+ else if(a==="start"){if(!U.photo0){U.msg="Take the before photo first.";render();return}const c=cur(U.who),d=c.left!=null?c.left:c.m*60;U.end=Date.now()+d*1000;U.left=d;U.d0=d;U.need=Math.min(d,Math.ceil(c.m*60/3));U.stage="TIMER";U.warned=0;U.msg="";U.flash="";render()}
  else if(a==="finish"){const lf=Math.max(0,Math.ceil((U.end-Date.now())/1000));if(U.d0-lf<U.need){render();return}U.left=lf;U.stage="PHOTO";render()}
  else if(a==="submit")submit();
  else if(a==="skipbreak"){K.breakEnd=0;save();render()}
- else if(a==="reset"){if(asked==="reset"){S={pin:S.pin,synced:S.synced||[],plan:null,planAt:S.planAt||0,custom:lib(),ov:S.ov||{},taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;save();U.note="✅ App reset.";render()}else{U.ask="reset";render()}}
+ else if(a==="view"){U.view=v;render()}
+ else if(a==="roll"){if(!U.turn)doRoll(U.who);render()}
+ else if(a==="turnok"){U.turn=null;render()}
+ else if(a==="qskip"){const T=U.turn;if(T&&(T.stage==="fact"||T.stage==="word")){T.stage="done";T.res="Skipped. Maybe next time!"}render()}
+ else if(a==="qans"){const T=U.turn;if(T&&T.stage==="fact"){const ok=Number(v)===T.q.c;finishQuiz(T.k,ok,(ok?"✅ Correct! ":"Not quite. ")+"The answer: "+T.q.o[T.q.c]+". "+T.q.f+(ok?" Move ahead 2!":""))}render()}
+ else if(a==="wans"){const T=U.turn;if(T&&T.stage==="word"){const val=(document.getElementById("wa").value||"").trim().toUpperCase(),ok=val===T.q.w;finishQuiz(T.k,ok,(ok?"✅ You got it! ":"Not quite. ")+"The word was "+T.q.w+(ok?". Move ahead 2!":"."))}render()}
+ else if(a==="pen"){const T=U.turn;if(T&&T.stage==="pen"){const keeper=Math.floor(Math.random()*3),ok=keeper!==Number(v);finishQuiz(T.k,ok,ok?"⚽ GOAL! The keeper dove the wrong way. Move ahead 3!":"🧤 Saved! Great try.",3)}render()}
+ else if(a==="approve"){const ae=S.log.find(x=>x.id===v);if(ae&&ae.first&&!ae.ok){applyApprove(ae);save();pushRow(ae.child,"APPROVE|"+ae.ts)}render()}
+ else if(a==="resetpage"){U.resetPage=true;U.rmsg="";render()}
+ else if(a==="resetno"){U.resetPage=false;render()}
+ else if(a==="resetgo"){const w=(document.getElementById("rc").value||"").trim().toUpperCase();
+  if(w!=="RESET"){U.rmsg="Type the word RESET to confirm.";render();return}
+  wipe();U.resetPage=false;U.rmsg="";pushRow("RESET","ALL");U.note="✅ Reset done. Every other phone resets within a few seconds.";render()}
  else if(a==="ack"){S.log.forEach(e=>{if(e.laundry)e.seen=1});save();render()}
  else if(a==="ldstart"){const le={id:"l"+Date.now(),child:U.who,title:"🧺 Started the laundry",earned:0,ts:Date.now(),laundry:1,seen:0,start:1};S.ld={start:Date.now(),lockEnd:0,last:U.who,at:Date.now()};S.log.unshift(le);S.log=S.log.slice(0,25);save();party();render();remotePush(le)}
  else if(a==="ldclaim"){if(ldPhase()==="ready"){const n=Date.now();const le={id:"l"+n,child:U.who,title:"🧺 Switched the laundry",earned:1,ts:n,laundry:1,seen:0};S.ld={start:n,lockEnd:n+LL,last:U.who,at:n};K.bank=+(K.bank+1).toFixed(2);S.log.unshift(le);S.log=S.log.slice(0,25);save();party();remotePush(le)}render()}
