@@ -31,8 +31,8 @@ input[type=password],input[type=text]{width:100%;padding:12px;border:1px solid v
 .btn:disabled{opacity:.5}
 </style></head><body><div id="app"></div>
 <script>
-const PRI=[["p1","#1 Strip bed & put bedding by washer/dryer",5],["p2","#2 Pick up all things off room floor & put away",10],["p3","#3 Clean up your desk",10],["p4","#4 Make sure NOTHING is under your bed",5],["p5","#5 Vacuum your floor",10]].map(([id,t,m])=>({id,t,m}));
-const POOL=[["r1","Empty all 7 garbages & replace bags",10],["r2","Vacuum the stairs",10],["r3","Straighten couch, fix cushions & take blanket to wash",5],["r4","Wipe down kitchen table really good",5],["r5","Take out recycles & replace bag",5],["r6","Pick up dog poop outside & put in outdoor trash",10],["r7","Spray back ways with Poo-Here spray until gone",10],["r8","Sweep downstairs & vacuum up piles",10],["r9","Mop downstairs",15],["r10","Clean kids bathroom (mirror, counters, floor, tub)",15],["r11","Clean all 3 toilets inside & out with Clorox wipes",15],["r12","Pick up garbage around back and sides of house",10],["r13","Dump overnight oats jars & soak mason jars in sink",15],["r14","Wipe down mirrors in all 3 bathrooms",15],["r15","Wash dishes in sink, put on rack & clean sink",15],["r16","Wipe down kitchen counters",5],["r17","Wipe coffee bar, Keurig, under ice maker & top shelf",20],["r18","Pick up dining chairs & vacuum under table with purple vacuum",10]].map(([id,t,m])=>({id,t,m}));
+const PRI=[["p1","#1 Strip bed & put bedding by washer/dryer",5],["p2","#2 Pick up all things off room floor & put away",10],["p3","#3 Clean up your desk",10],["p4","#4 Make sure NOTHING is under your bed",5],["p5","#5 Vacuum your floor",10]].map(([id,t,m])=>({id,t,m,t0:t}));
+const POOL=[["r1","Empty all 7 garbages & replace bags",10],["r2","Vacuum the stairs",10],["r3","Straighten couch, fix cushions & take blanket to wash",5],["r4","Wipe down kitchen table really good",5],["r5","Take out recycles & replace bag",5],["r6","Pick up dog poop outside & put in outdoor trash",10],["r7","Spray back ways with Poo-Here spray until gone",10],["r8","Sweep downstairs & vacuum up piles",10],["r9","Mop downstairs",15],["r10","Clean kids bathroom (mirror, counters, floor, tub)",15],["r11","Clean all 3 toilets inside & out with Clorox wipes",15],["r12","Pick up garbage around back and sides of house",10],["r13","Dump overnight oats jars & soak mason jars in sink",15],["r14","Wipe down mirrors in all 3 bathrooms",15],["r15","Wash dishes in sink, put on rack & clean sink",15],["r16","Wipe down kitchen counters",5],["r17","Wipe coffee bar, Keurig, under ice maker & top shelf",20],["r18","Pick up dining chairs & vacuum under table with purple vacuum",10]].map(([id,t,m])=>({id,t,m,t0:t}));
 const KIDS=["Peyton","Carter"],KEY="chorequest-v1";
 const kid0=()=>({bank:0,step:0,done:0,redo:[],pair:[],chosen:null,breakEnd:0});
 let S={pin:"1234",taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};
@@ -57,14 +57,16 @@ function remotePush(entry){
   body:JSON.stringify({child:entry.child,chore:entry.title,earnings:entry.earned,timestamp:entry.ts,photo:entry.photo||"",photo2:entry.photo0||""})}).catch(()=>{})}catch(e){}
 }
 function pic(u){const m=/[?&]id=([\w-]+)/.exec(u||"");return m?"https://drive.google.com/thumbnail?id="+m[1]+"&sz=w1200":u}
-let pulling=false;
+let pulling=false,pf=0,pw=0;
+const canR=()=>{const ae=document.activeElement;return!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&Date.now()-(U.cam||0)>20000&&!U.rec};
 async function remotePull(){
  if(pulling)return;pulling=true;
  try{
   const r=await fetch(SHEET_URL);
-  if(!r.ok)return;
+  if(!r.ok){pf++;pw=Math.min(9,pf);return}
   const rows=await r.json();
-  if(!Array.isArray(rows))return;
+  if(!Array.isArray(rows)){pf++;pw=Math.min(9,pf);return}
+  pf=0;pw=0;
   let changed=false;
   rows.sort((x,y)=>Number(x[3])-Number(y[3]));
   for(const row of rows){
@@ -72,7 +74,8 @@ async function remotePull(){
    let photoUrl=String(row[4]||""),photo0=String(row[5]||"");
    if(!/^https?:/.test(photoUrl))photoUrl="";if(!/^https?:/.test(photo0))photo0="";
    if(!ts||S.synced.includes(ts))continue;
-   if(child==="PLAN"){S.synced.push(ts);changed=true;try{applyPlan(JSON.parse(title),ts)}catch(e){}continue}
+   if(child==="PLAN"){S.synced.push(ts);changed=true;try{applyPlan(title==="OFF"?null:JSON.parse(title),ts)}catch(e){}continue}
+   if(child==="CHORE"){S.synced.push(ts);changed=true;try{if(title.indexOf("DEL|")===0){const dt=title.slice(4).toLowerCase();S.custom=lib().filter(x=>x.t.toLowerCase()!==dt)}else if(title.indexOf("EDIT|")===0){const ed=JSON.parse(title.slice(5));applyEdit(String(ed.k),String(ed.t).slice(0,80),Number(ed.m)||10)}else{const c=JSON.parse(title);if(c&&c.t&&!lib().some(x=>x.t.toLowerCase()===String(c.t).toLowerCase()))lib().push({t:String(c.t).slice(0,80),m:Number(c.m)||15})}}catch(e){}continue}
    if(!S.kids[child])continue;
    S.synced.push(ts);changed=true;
    const K=S.kids[child];
@@ -89,11 +92,11 @@ async function remotePull(){
     if(!entry.seen&&!sw)entry.start=1;
     if(ts>(S.ld.at||0))S.ld={start:ts,lockEnd:sw?ts+LL:0,last:child,at:ts};
    }else{
-    const pit=S.plan&&S.plan.items.find(i=>i.t===title&&!S.doneIds.includes(i.id));
+    const pit=S.plan&&(S.plan.items.find(i=>i.t===title&&i.who===child&&!S.doneIds.includes(i.id))||S.plan.items.find(i=>i.t===title&&i.who==="either"&&!S.doneIds.includes(i.id)));
     if(K.redo.some(r=>r.t===title))K.redo=K.redo.filter(r=>r.t!==title);
     if(pit){entry.cid=pit.id;S.doneIds.push(pit.id);if(pit.who==="either"&&!S.taken.includes(pit.id))S.taken.push(pit.id);if(K.chosen&&K.chosen.id===pit.id){K.chosen=null;K.pair=[]}}
     else{
-     const pi=PRI.findIndex(c=>c.t===title),ri=POOL.findIndex(c=>c.t===title);
+     const pi=PRI.findIndex(c=>c.t===title||c.t0===title),ri=POOL.findIndex(c=>c.t===title||c.t0===title);
      const cid=pi>=0?PRI[pi].id:ri>=0?POOL[ri].id:null;
      if(cid){entry.cid=cid;if(!S.doneIds.includes(cid))S.doneIds.push(cid)}
      if(pi>=0&&K.step<pi+1)K.step=pi+1;
@@ -105,10 +108,14 @@ async function remotePull(){
    S.log.unshift(entry);S.log=S.log.slice(0,25);
   }
   S.synced=S.synced.slice(-1000);
-  if(changed){save();const ae=document.activeElement;if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)))render()}
- }catch(e){}finally{pulling=false}
+  if(changed){save();if(canR())render();else U.dirty=true}
+ }catch(e){pf++;pw=Math.min(9,pf)}finally{pulling=false}
 }
-setInterval(remotePull,15000);
+const POLL_MS=3000;
+setInterval(()=>{if(document.visibilityState==="hidden")return;if(pw>0){pw--;return}remotePull()},POLL_MS);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")setTimeout(remotePull,1200)});
+window.addEventListener("focus",()=>setTimeout(remotePull,1200));
+window.addEventListener("online",()=>setTimeout(remotePull,500));
 setTimeout(remotePull,1500);
 const rate=s=>Math.round(s/2)/100;
 const poolList=()=>S.plan?S.plan.items.filter(i=>i.who==="either"):POOL;
@@ -116,11 +123,28 @@ function planNext(k){const K=S.kids[k],mine=S.plan.items.filter(i=>i.who===k&&!S
 function cur(k){const K=S.kids[k];if(K.redo.length)return K.redo[0];if(S.plan)return planNext(k);if(K.step<5)return PRI[K.step];return K.chosen}
 const okC=c=>{if(S.taken.includes(c.id))return false;const o=c.orig||c.id;if(o!=="r9")return true;if(!S.plan)return S.doneIds.includes("r8");const sw=S.plan.items.find(i=>i.orig==="r8");return !sw||S.doneIds.includes(sw.id)};
 function newPair(K){const a=poolList().filter(okC).sort(()=>Math.random()-.5);K.pair=a.slice(0,2);K.chosen=null}
-function applyPlan(items,ts){if(ts<=(S.planAt||0))return;S.planAt=ts;S.plan=items&&items.length?{ts,items}:null;for(const n of KIDS){S.kids[n].chosen=null;S.kids[n].pair=[]}}
-function setPlan(items){const ts=Date.now();S.planAt=ts;S.plan=items&&items.length?{ts,items}:null;
+const lib=()=>S.custom||(S.custom=[]);
+function pushRow(child,chore){let ts=Date.now();while(S.synced.includes(ts))ts++;S.synced.push(ts);save();
+ try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({child,chore,earnings:0,timestamp:ts})}).catch(()=>{})}catch(x){}}
+function addLib(t,m){if(lib().some(x=>x.t.toLowerCase()===t.toLowerCase()))return;lib().push({t,m});save();pushRow("CHORE",JSON.stringify({t,m}))}
+function delLib(t){S.custom=lib().filter(x=>x.t.toLowerCase()!==t.toLowerCase());save();pushRow("CHORE","DEL|"+t)}
+function applyQ(){const q=(U.q||"").trim().toLowerCase();let n=0,t=0;document.querySelectorAll("[data-ct]").forEach(el=>{t++;const m=!q||el.dataset.ct.includes(q);el.style.display=m?"":"none";if(m)n++});const c=document.getElementById("cc");if(c)c.textContent=q?n+" of "+t+" chores match"+(n?"":". Not found? Add it at the bottom."):""}
+const SELS="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--card);color:var(--tx);font-size:15px";
+function applyEdit(k,t,m){
+ if(k.indexOf("T:")===0){const ot=k.slice(2).toLowerCase(),c=lib().find(x=>x.t.toLowerCase()===ot);if(c){c.t=t;c.m=m}
+  if(S.plan)S.plan.items.forEach(i=>{if(!i.orig&&!i.req&&i.t.toLowerCase()===ot&&!S.doneIds.includes(i.id)){i.t=t;i.m=m}})}
+ else{const c=PRI.concat(POOL).find(x=>x.id===k);if(!c)return;c.t=t;c.m=m;(S.ov=S.ov||{})[k]={t,m};
+  if(S.plan)S.plan.items.forEach(i=>{if(i.orig===k&&!S.doneIds.includes(i.id)){i.t=t;i.m=m}})}}
+function editForm(key,t,m){const ms=[...new Set([5,10,15,20,25,30,40,45,60,90,120,m])].sort((a,b)=>a-b);
+ return`<div style="margin-top:8px;padding:8px;border-radius:10px;background:var(--bg)"><b>✏️ Edit chore</b><input type="text" id="et" maxlength="80" value="${esc(t)}" style="margin-top:6px;font-size:15px;text-align:left"><select id="em" style="${SELS}">${ms.map(x=>`<option value="${x}"${x===m?" selected":""}>${x} minutes</option>`).join("")}</select><button class="btn g" data-a="savec" data-v="${esc(key)}">Save changes</button><button class="btn s" data-a="cancelc" style="color:var(--tx);border-color:var(--ln)">Cancel</button><div class="mu">Changes apply to every phone and to this weekend's plan (chores already finished keep their old name). A chore someone is working on right now keeps its old timer.</div></div>`}
+function reqRow(c){return`<div style="margin-top:6px">• ${esc(c.t)} <span style="font-size:12px">(${c.m} min)</span> <button class="btn s" style="display:inline-block;width:auto;margin:0 0 0 4px;padding:3px 10px;color:#92400e;border-color:#92400e" data-a="edc" data-v="${c.id}">✏️ Edit</button>${U.ed===c.id?editForm(c.id,c.t,c.m):""}</div>`}
+function reqItems(ts){const a=[];for(const k of KIDS)for(const c of PRI)a.push({id:"w"+ts+"-"+k+"-"+c.id,t:c.t,m:c.m,who:k,orig:c.id,req:1});return a}
+function mkPlan(items,ts){return items?{ts,items:reqItems(ts).concat(items)}:null}
+function applyPlan(items,ts){if(ts<=(S.planAt||0))return;S.planAt=ts;S.plan=mkPlan(items,ts);for(const n of KIDS){S.kids[n].chosen=null;S.kids[n].pair=[]}}
+function setPlan(items){const ts=Date.now();S.planAt=ts;S.plan=mkPlan(items,ts);
  for(const n of KIDS){S.kids[n].chosen=null;S.kids[n].pair=[]}
  S.synced.push(ts);save();
- try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({child:"PLAN",chore:JSON.stringify(items||[]),earnings:0,timestamp:ts})}).catch(()=>{})}catch(x){}}
+ try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({child:"PLAN",chore:items?JSON.stringify(items):"OFF",earnings:0,timestamp:ts})}).catch(()=>{})}catch(x){}}
 function tick(){const now=Date.now();
  if(U.stage==="TIMER")U.left=Math.max(0,Math.ceil((U.end-now)/1000));
  const K=S.kids[U.who];if(K.breakEnd&&now>=K.breakEnd){K.breakEnd=0;save()}
@@ -128,6 +152,7 @@ function tick(){const now=Date.now();
  const b=document.getElementById("b");if(b&&K.breakEnd)b.textContent=fmt(Math.ceil((K.breakEnd-now)/1000));
  if(U.stage==="TIMER"&&U.left===0&&!U.warned){U.warned=1;render()}
  else if(U.stage==="TIMER"){const f=document.getElementById("fin"),el=U.d0-U.left;if(f){if(el<U.need)f.textContent="Finish unlocks in "+fmt(U.need-el);else if(f.disabled)render()}}
+ if(U.dirty&&canR()){U.dirty=false;render()}
  ldTick()}
 setInterval(tick,500);
 const words=s=>{const m=Math.floor(s/60),r=s%60,p=[];if(m)p.push(m+(m===1?" minute":" minutes"));if(r||!m)p.push(r+(r===1?" second":" seconds"));return p.join(" ")};
@@ -172,7 +197,7 @@ function kidView(K){
   if(!K.pair.length)return`<div class="c"><div style="font-size:44px">⏳</div><h3>No chores to pick right now</h3><p class="mu">Mop downstairs unlocks after Sweep downstairs is finished. Check back soon!</p></div>`;
   return`<h3 class="c">Pick 1 of 2 chores:</h3>`+K.pair.map(c=>`<button class="pick" data-a="choose" data-v="${c.id}">${esc(c.t)}<div class="mu">⏰ ${c.m} min</div></button>`).join("")}
  const c=cur(U.who);
- let h=`<div class="chore${""}">${K.redo.length?`<span class="tag" style="background:#ffe4e6;color:#9f1239">REDO – parent sent it back</span><br>`:`<span class="mu">CURRENT CHORE</span><br>`}<b>${esc(c.t)}</b>${K.redo.length&&c.note?`<div style="margin:8px 0;padding:8px;border-radius:10px;background:#ffe4e6;color:#9f1239;text-align:left">💬 <b>Parent says:</b> ${esc(c.note)}</div>`:""}<div class="mu">${K.redo.length?"You have "+words(c.left!=null?c.left:c.m*60)+" remaining to complete this chore for your reward.":"Time limit: "+c.m+" min"}</div></div>`;
+ let h=`<div class="chore${""}">${K.redo.length?`<span class="tag" style="background:#ffe4e6;color:#9f1239">REDO – parent sent it back</span><br>`:`<span class="mu">${c.req?"⭐ REQUIRED WEEKEND CHORE":"CURRENT CHORE"}</span><br>`}<b>${esc(c.t)}</b>${K.redo.length&&c.note?`<div style="margin:8px 0;padding:8px;border-radius:10px;background:#ffe4e6;color:#9f1239;text-align:left">💬 <b>Parent says:</b> ${esc(c.note)}</div>`:""}<div class="mu">${K.redo.length?"You have "+words(c.left!=null?c.left:c.m*60)+" remaining to complete this chore for your reward.":"Time limit: "+c.m+" min"}</div></div>`;
  if(U.msg)h+=`<p class="mu">${esc(U.msg)}</p>`;
  if(U.stage==="READ"){h+=`<p class="c mu">Step 1: Take a "before" photo of what you are about to work on.</p>${U.photo0?`<img src="${U.photo0}" style="width:100%;border-radius:10px">`:""}<label class="btn" style="text-align:center">📷 ${U.photo0?"Retake before photo":"Take before photo"}<input type="file" accept="image/*" capture="environment" data-a="photo0" hidden></label>`+(U.photo0?`<button class="btn g" data-a="start">Start timer & begin →</button>`:`<p class="c mu">The timer unlocks after you take the photo.</p>`)}
  else if(U.stage==="TIMER"){const el=U.d0-U.left,lk=el<U.need;h+=`<div class="big" id="t">${fmt(U.left)}</div><p class="c mu">Every second left when you finish = half a cent!</p><button class="btn g" id="fin" data-a="finish"${lk?" disabled":""}>${lk?"Finish unlocks in "+fmt(U.need-el):"I finished! Take photo →"}</button>${lk?`<p class="c mu">Take your time and do it well. The finish button unlocks after ${fmt(U.need)} of work.</p>`:""}`}
@@ -189,24 +214,30 @@ function parentView(){
  h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="reset">${U.ask==="reset"?"⚠️ Tap again to ERASE EVERYTHING":"⚠️ Reset app (erase everything)"}</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Clears both piggy banks, all progress and the log. The PIN stays the same.</p><p class="mu c">Data is saved on this device only. Parents: review chores and laundry alerts on the same device the kids use.</p>`;
  return h}
 function photosHtml(e){const a=[["Before",e.photo0],["After",e.photo]].filter(x=>x[1]);if(!a.length)return"";return`<div class="row" style="margin-top:6px;align-items:flex-start">`+a.map(([l,u])=>`<div style="flex:1;min-width:0"><div class="mu">${l}</div><img style="margin-top:2px" src="${pic(u)}" referrerpolicy="no-referrer"></div>`).join("")+`</div>`}
-const WHO=[["","Not this weekend"],["Peyton","Peyton"],["Carter","Carter"],["either","Either one (shared pile)"]];
+const WHO=[["either","Shared (either kid, first come first served)"],["Peyton","Peyton"],["Carter","Carter"],["","Not this weekend"],["both","Both kids (each one does it)"]];
 function planBox(){
  let h=`<div class="ent" style="background:var(--bg)"><b>📅 Weekend chores</b>`;
  if(S.plan){const its=S.plan.items,dn=its.filter(i=>S.doneIds.includes(i.id)).length;
   h+=`<div class="mu">Weekend plan is ON for both kids. ${dn} of ${its.length} done.</div>`;
-  for(const [k,l] of [["Peyton","Peyton"],["Carter","Carter"],["either","Either one (shared pile)"]]){const a=its.filter(i=>i.who===k);if(a.length)h+=`<div style="margin-top:8px"><span class="tag">${l}</span>${a.map(i=>`<div class="mu">${S.doneIds.includes(i.id)?"✅":"⬜"} ${esc(i.t)}</div>`).join("")}</div>`}
+  const rq=its.filter(i=>i.req);h+=`<div class="mu" style="margin-top:6px">⭐ Required first for both kids: ${PRI.length} bedroom chores each (${rq.filter(i=>S.doneIds.includes(i.id)).length} of ${rq.length} done)</div>`;
+  const ex=its.filter(i=>!i.req),bt=new Set(ex.filter(i=>i.who==="Peyton").map(i=>i.t).filter(t=>ex.some(j=>j.who==="Carter"&&j.t===t)));
+  if(bt.size)h+=`<div style="margin-top:8px"><span class="tag">Both kids</span>${[...bt].map(t=>`<div class="mu">${esc(t)} (${KIDS.map(k=>{const x=ex.find(i=>i.t===t&&i.who===k);return k+" "+(x&&S.doneIds.includes(x.id)?"✅":"⬜")}).join(", ")})</div>`).join("")}</div>`;
+  for(const [k,l] of [["Peyton","Peyton"],["Carter","Carter"],["either","Shared (either kid)"]]){const a=its.filter(i=>i.who===k&&!i.req&&!bt.has(i.t));if(a.length)h+=`<div style="margin-top:8px"><span class="tag">${l}</span>${a.map(i=>`<div class="mu">${S.doneIds.includes(i.id)?"✅":"⬜"} ${esc(i.t)}</div>`).join("")}</div>`}
   h+=`<button class="btn" data-a="plan">Edit weekend chores</button><button class="btn s" data-a="planoff">${U.ask==="planoff"?"⚠️ Tap again: go back to the regular chore list":"Turn off weekend plan"}</button>`}
  else h+=`<div class="mu">Pick which chores each child does this weekend, or put some in a shared pile. Right now both kids use the regular list.</div><button class="btn" data-a="plan">Assign weekend chores</button>`;
  return h+(U.pnote?`<p class="c"><b>${esc(U.pnote)}</b></p>`:"")+`</div>`}
-function openPlan(){const cp=S.plan?S.plan.items:[];
- const d=PRI.concat(POOL).map(c=>{const p=cp.find(i=>i.orig===c.id);return{t:c.t,m:c.m,orig:c.id,who:p?p.who:""}});
- cp.filter(i=>!i.orig).forEach(i=>d.push({t:i.t,m:i.m,orig:"",who:i.who}));
- U.draft=d;U.edit=true}
+function openPlan(){const cp=S.plan?S.plan.items.filter(i=>!i.req):[];
+ const wh=t=>{const a=cp.filter(i=>i.t===t);if(!S.plan)return"either";if(!a.length)return"";if(a.some(i=>i.who==="Peyton")&&a.some(i=>i.who==="Carter"))return"both";return a[0].who};
+ const d=POOL.map(c=>({t:c.t,m:c.m,orig:c.id,who:wh(c.t)})).concat(lib().map(c=>({t:c.t,m:c.m,orig:"",who:wh(c.t)})));
+ const seen=new Set(lib().map(c=>c.t.toLowerCase()));cp.filter(i=>!i.orig).forEach(i=>{const k=i.t.toLowerCase();if(seen.has(k))return;seen.add(k);d.push({t:i.t,m:i.m,orig:"",who:wh(i.t)})});
+ U.q="";U.ed="";U.draft=d;U.edit=true}
 function planEditor(){
- let h=`<h3 style="margin:0">📅 Weekend chores</h3><p class="mu">Choose who does each chore. <b>Either one</b> chores go in a shared pile the kids pick from, first come first served. Chores set to "Not this weekend" are left out.</p>${U.pnote?`<p class="c" style="color:var(--bad)"><b>${esc(U.pnote)}</b></p>`:""}`;
+ let h=`<h3 style="margin:0">📅 Weekend chores</h3><p class="mu">Every chore starts as <b>Shared</b>: either kid can pick it, first come first served. Change it to a kid's name to assign it to just them, <b>Both kids</b> if each one has to do it, or <b>Not this weekend</b> to leave it out.</p><div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b"><b>⭐ Always required first, for both kids, every weekend:</b><br>${PRI.map(reqRow).join("")}<div style="font-size:13px;margin-top:4px">These are added automatically. Your kids must finish them before any other chore.</div></div>${U.pnote?`<p class="c" style="color:var(--bad)"><b>${esc(U.pnote)}</b></p>`:""}`;
  const sel="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--card);color:var(--tx);font-size:15px";
- U.draft.forEach((c,i)=>{h+=`<div class="ent"><b>${esc(c.t)}</b><div class="mu">⏰ ${c.m} min${c.orig?"":" · added by you"}</div><select data-a="asg" data-v="${i}" style="${sel}">${WHO.map(([v,l])=>`<option value="${v}"${c.who===v?" selected":""}>${l}</option>`).join("")}</select></div>`});
- h+=`<div class="ent" style="background:var(--bg)"><b>➕ Add your own chore</b><input type="text" id="nc" maxlength="80" placeholder="Chore name" style="margin-top:8px;font-size:15px;text-align:left"><select id="nm" style="${sel}">${[5,10,15,20,30,45,60].map(m=>`<option value="${m}"${m===15?" selected":""}>${m} minutes</option>`).join("")}</select><button class="btn" data-a="addc">Add to list</button></div>`;
+ const q=(U.q||"").trim().toLowerCase(),vis=c=>!q||c.t.toLowerCase().includes(q);
+ h+=`<input type="text" id="cs" placeholder="🔍 Search chores..." value="${esc(U.q||"")}" style="font-size:15px;text-align:left;margin-top:10px"><div class="mu" id="cc" style="margin:4px 0 0">${q?U.draft.filter(vis).length+" of "+U.draft.length+" chores match"+(U.draft.some(vis)?"":". Not found? Add it at the bottom."):""}</div>`;
+ U.draft.forEach((c,i)=>{h+=`<div class="ent" data-ct="${esc(c.t.toLowerCase())}"${vis(c)?"":' style="display:none"'}><b>${esc(c.t)}</b><div class="mu">⏰ ${c.m} min${c.orig?"":" · added by you"}</div><select data-a="asg" data-v="${i}" style="${sel}">${WHO.map(([v,l])=>`<option value="${v}"${c.who===v?" selected":""}>${l}</option>`).join("")}</select><button class="btn s" style="color:var(--pr);border-color:var(--pr)" data-a="edc" data-v="${esc(c.orig||"T:"+c.t)}">✏️ Edit title or time</button>${U.ed===(c.orig||"T:"+c.t)?editForm(c.orig||"T:"+c.t,c.t,c.m):""}${c.orig?"":`<button class="btn s" data-a="delc" data-v="${i}">${U.ask==="delc"+i?"⚠️ Tap again to delete this chore from the app for good":"🗑 Delete this chore from the app"}</button>`}</div>`});
+ h+=`<div class="ent" style="background:var(--bg)"><b>➕ Add a new chore</b><div class="mu">New chores are saved in the app for good, so you can pick them again any weekend.</div><input type="text" id="nc" maxlength="80" placeholder="Chore name" style="margin-top:8px;font-size:15px;text-align:left"><select id="nm" style="${sel}">${[5,10,15,20,30,45,60].map(m=>`<option value="${m}"${m===15?" selected":""}>${m} minutes</option>`).join("")}</select><button class="btn" data-a="addc">Add to list</button></div>`;
  return h+`<button class="btn g" data-a="saveplan">Save weekend plan</button><button class="btn s" data-a="cancelplan" style="color:var(--tx);border-color:var(--ln)">Cancel</button>`}
 const blobURL=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
 function shrink(file,mx=480,q=.6){return new Promise(res=>{const i=new Image();i.onload=()=>{const s=Math.min(1,mx/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*s;c.height=i.height*s;c.getContext("2d").drawImage(i,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",q))};i.src=URL.createObjectURL(file)})}
@@ -239,8 +270,8 @@ function doReject(e,note){
  K.bank=+(K.bank-e.earned).toFixed(2);S.doneIds=S.doneIds.filter(x=>x!==e.cid);
  if(!e.laundry){const ch=PRI.concat(POOL).concat(S.plan?S.plan.items:[]).find(x=>x.id===e.cid);K.redo.push({id:e.cid,t:e.title,m:e.min||(ch?ch.m:10),left:e.left,note:note||""});K.breakEnd=0}
  S.log=S.log.filter(x=>x.id!==e.id);K.done=Math.max(0,K.done-1);save()}
-$.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)return;const a=t.dataset.a,v=t.dataset.v,K=S.kids[U.who],asked=U.ask;U.ask=null;U.note="";U.pnote="";
- if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.msg="";render()}
+$.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)return;const a=t.dataset.a,v=t.dataset.v,K=S.kids[U.who],asked=U.ask;U.ask=null;U.note="";U.pnote="";if(a==="photo"||a==="photo0")U.cam=Date.now();
+ if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.msg="";render()}
  else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=U.photo0=null;U.msg="";render()}
  else if(a==="login"){if(document.getElementById("pin").value===S.pin){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
  else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=p;save();U.note="✅ PIN saved."}else U.note="Use at least 4 digits.";render()}
@@ -250,7 +281,7 @@ $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)retu
  else if(a==="finish"){const lf=Math.max(0,Math.ceil((U.end-Date.now())/1000));if(U.d0-lf<U.need){render();return}U.left=lf;U.stage="PHOTO";render()}
  else if(a==="submit")submit();
  else if(a==="skipbreak"){K.breakEnd=0;save();render()}
- else if(a==="reset"){if(asked==="reset"){S={pin:S.pin,synced:S.synced||[],plan:null,planAt:S.planAt||0,taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;save();U.note="✅ App reset.";render()}else{U.ask="reset";render()}}
+ else if(a==="reset"){if(asked==="reset"){S={pin:S.pin,synced:S.synced||[],plan:null,planAt:S.planAt||0,custom:lib(),ov:S.ov||{},taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;save();U.note="✅ App reset.";render()}else{U.ask="reset";render()}}
  else if(a==="ack"){S.log.forEach(e=>{if(e.laundry)e.seen=1});save();render()}
  else if(a==="ldstart"){const le={id:"l"+Date.now(),child:U.who,title:"🧺 Started the laundry",earned:0,ts:Date.now(),laundry:1,seen:0,start:1};S.ld={start:Date.now(),lockEnd:0,last:U.who,at:Date.now()};S.log.unshift(le);S.log=S.log.slice(0,25);save();party();render();remotePush(le)}
  else if(a==="ldclaim"){if(ldPhase()==="ready"){const n=Date.now();const le={id:"l"+n,child:U.who,title:"🧺 Switched the laundry",earned:1,ts:n,laundry:1,seen:0};S.ld={start:n,lockEnd:n+LL,last:U.who,at:n};K.bank=+(K.bank+1).toFixed(2);S.log.unshift(le);S.log=S.log.slice(0,25);save();party();remotePush(le)}render()}
@@ -258,15 +289,24 @@ $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)retu
  else if(a==="planoff"){if(asked==="planoff"){setPlan(null);U.pnote="✅ Weekend plan turned off. Everyone is back on the regular list.";render()}else{U.ask="planoff";render()}}
  else if(a==="addc"){const nm=document.getElementById("nc").value.trim(),mm=Number(document.getElementById("nm").value)||15;
   if(!nm)U.pnote="Type a chore name first.";
-  else if(U.draft.some(c=>c.t.toLowerCase()===nm.toLowerCase()))U.pnote="That chore is already on the list.";
-  else U.draft.push({t:nm.slice(0,80),m:mm,orig:"",who:"either"});render()}
- else if(a==="saveplan"){const ts=Date.now(),items=U.draft.filter(c=>c.who).map((c,i)=>({id:"w"+ts+"-"+i,t:c.t,m:c.m,who:c.who,orig:c.orig||""}));
-  if(!items.length){U.pnote="Pick at least one chore, or tap Cancel.";render();return}
+  else if(U.draft.some(c=>c.t.toLowerCase()===nm.toLowerCase())||PRI.some(c=>c.t.toLowerCase()===nm.toLowerCase()))U.pnote="That chore is already on the list.";
+  else{const nt=nm.slice(0,80);U.draft.push({t:nt,m:mm,orig:"",who:"either"});addLib(nt,mm);U.q="";U.pnote="✅ Added \""+nt+"\" and saved it in the app for good.";}render()}
+ else if(a==="edc"){U.ed=U.ed===v?"":v;render()}
+ else if(a==="cancelc"){U.ed="";render()}
+ else if(a==="savec"){const nt=document.getElementById("et").value.trim().slice(0,80),nm=Number(document.getElementById("em").value)||10;
+  const clash=PRI.concat(POOL).some(c=>c.id!==v&&c.t.toLowerCase()===nt.toLowerCase())||lib().some(c=>("T:"+c.t)!==v&&c.t.toLowerCase()===nt.toLowerCase());
+  if(!nt)U.pnote="Type a chore name.";
+  else if(clash)U.pnote="Another chore already has that name.";
+  else{U.draft.forEach(c=>{if((c.orig||"T:"+c.t)===v){c.t=nt;c.m=nm}});applyEdit(v,nt,nm);pushRow("CHORE","EDIT|"+JSON.stringify({k:v,t:nt,m:nm}));U.ed="";U.pnote="✅ Saved. It updates on every phone within about 15 seconds."}
+  render()}
+ else if(a==="delc"){const di=Number(v);if(asked==="delc"+di){const dc=U.draft[di];if(dc){delLib(dc.t);U.draft.splice(di,1);U.pnote="Deleted \""+dc.t+"\" from the app."}render()}else{U.ask="delc"+di;render()}}
+ else if(a==="saveplan"){const ts=Date.now(),items=[];U.draft.forEach((c,i)=>{if(!c.who)return;const w=c.who==="both"?KIDS:[c.who];w.forEach(k=>items.push({id:"w"+ts+"-"+i+(c.who==="both"?"-"+k:""),t:c.t,m:c.m,who:k,orig:c.orig||""}))});
   setPlan(items);U.edit=false;U.pnote="✅ Weekend plan saved. It will show up on every phone within about 15 seconds.";render()}
  else if(a==="cancelplan"){U.edit=false;render()}
  else if(a==="reject"){if(asked==="rej"+v)reject(v);else{U.ask="rej"+v;render()}}});
-$.addEventListener("input",ev=>{const id=ev.target.dataset&&ev.target.dataset.cm;if(id){U.cmt=U.cmt||{};U.cmt[id]=ev.target.value}});
+$.addEventListener("input",ev=>{if(ev.target.id==="cs"){U.q=ev.target.value;applyQ();return}const id=ev.target.dataset&&ev.target.dataset.cm;if(id){U.cmt=U.cmt||{};U.cmt[id]=ev.target.value}});
 $.addEventListener("change",async ev=>{if(ev.target.dataset.a==="asg"){U.draft[Number(ev.target.dataset.v)].who=ev.target.value;return}if(ev.target.dataset.a==="photo0"&&ev.target.files[0]){U.photo0=await shrink(ev.target.files[0],360,.5);render();return}if(ev.target.dataset.a==="audiofile"&&ev.target.files[0]){const f=ev.target.files[0];if(f.size>600000){U.msg="That recording is too long. Record just a few seconds.";render();return}U.audio=await blobURL(f);U.msg="";render();return}if(ev.target.dataset.a==="photo"&&ev.target.files[0]){U.photo=await shrink(ev.target.files[0]);render()}});
+for(const k in (S.ov||{}))applyEdit(k,S.ov[k].t,S.ov[k].m);
 render();
 (async()=>{try{const db=await claude.use("db");if(!db)return;dbDoc=db.doc("chorequest/state");
  dbDoc.onSnapshot(s=>{if(s.exists&&s.data()&&s.data().json&&!s.metadata.hasPendingWrites){try{const n=JSON.parse(s.data().json);if(n&&n.kids){n.ld=n.ld||{start:0,lockEnd:0,last:""};n.taken=n.taken||[];n.doneIds=n.doneIds||[];S=n;localStorage.setItem(KEY,JSON.stringify(S));if(!U.rec&&U.stage!=="TIMER"&&document.activeElement.tagName!=="INPUT")render()}}catch(e){}}else if(!s.exists)save()});
