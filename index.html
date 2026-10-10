@@ -43,7 +43,10 @@ let dbDoc=null,syncOn=false;
 const $=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=n=>(n<0?"-$":"$")+Math.abs(n).toFixed(2);
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+const SY={ok:0,err:"",rows:0,tries:0};
+const VER="v10";
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){
+  try{(S.log||[]).forEach(x=>{if(x.photo&&x.photo.indexOf("data:")===0)delete x.photo;if(x.photo0&&x.photo0.indexOf("data:")===0)delete x.photo0;delete x.audio});localStorage.setItem(KEY,JSON.stringify(S))}catch(e2){SY.err="Storage full: "+e2}}
  if(dbDoc){try{dbDoc.set({json:JSON.stringify(S)}).catch(()=>{})}catch(e){}}}
 
 // --- Shared sync via Google Sheet (Apps Script web app) ---
@@ -54,7 +57,7 @@ function remotePush(entry){
  if(!S.synced.includes(entry.ts))S.synced.push(entry.ts);
  S.synced=S.synced.slice(-1000);save();
  try{fetch(SHEET_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},
-  body:JSON.stringify({child:entry.child,chore:entry.title,earnings:entry.earned,timestamp:entry.ts,photo:entry.photo||"",photo2:entry.photo0||""})}).catch(()=>{})}catch(e){}
+  body:JSON.stringify({child:entry.child,chore:(entry.by==="parent"?"PARENT|":"")+entry.title,earnings:entry.earned,timestamp:entry.ts,photo:entry.photo||"",photo2:entry.photo0||""})}).catch(()=>{})}catch(e){}
 }
 function pic(u){const m=/[?&]id=([\w-]+)/.exec(u||"");return m?"https://drive.google.com/thumbnail?id="+m[1]+"&sz=w1200":u}
 let pulling=false,pf=0,pw=0;
@@ -63,14 +66,16 @@ async function remotePull(){
  if(pulling)return;pulling=true;
  try{
   const r=await fetch(SHEET_URL);
-  if(!r.ok){pf++;pw=Math.min(9,pf);return}
+  if(!r.ok){SY.err="Server answered "+r.status;pf++;pw=Math.min(9,pf);return}
   const rows=await r.json();
-  if(!Array.isArray(rows)){pf++;pw=Math.min(9,pf);return}
-  pf=0;pw=0;
+  if(!Array.isArray(rows)){SY.err="Sheet did not return a list (re-deploy Apps Script as New version, access: Anyone)";pf++;pw=Math.min(9,pf);return}
+  pf=0;pw=0;SY.ok=Date.now();SY.err="";
   let changed=false;
   rows.sort((x,y)=>Number(x[3])-Number(y[3]));
-  for(const row of rows){
-   const child=row[0],title=String(row[1]||""),earned=parseFloat(row[2])||0,ts=Number(row[3]);
+  SY.rows=rows.length;
+  for(const row of rows){ try{
+   let title=String(row[1]||"");const child=row[0],earned=parseFloat(row[2])||0,ts=Number(row[3]);
+   let by="";if(title.indexOf("PARENT|")===0){by="parent";title=title.slice(7)}
    let photoUrl=String(row[4]||""),photo0=String(row[5]||"");
    if(!/^https?:/.test(photoUrl))photoUrl="";if(!/^https?:/.test(photo0))photo0="";
    if(!ts||S.synced.includes(ts))continue;
@@ -88,7 +93,7 @@ async function remotePull(){
    if(/^(ROLL|MOVE)\|/.test(title)){try{applyGame(child,title,ts)}catch(e){}continue}
    if(title.indexOf("APPROVE|")===0){const at=Number(title.slice(8)),ae=S.log.find(x=>x.ts===at);if(ae&&ae.first&&!ae.ok)applyApprove(ae);continue}
    K.bank=+(K.bank+earned).toFixed(2);
-   const entry={id:"j"+ts,child,title,earned,ts,remote:1};if(photoUrl)entry.photo=photoUrl;if(photo0)entry.photo0=photo0;
+   const entry={id:"j"+ts,child,title,earned,ts,remote:1};if(photoUrl)entry.photo=photoUrl;if(photo0)entry.photo0=photo0;if(by)entry.by=by;
    if(title.indexOf("🧺")===0){
     entry.laundry=1;entry.seen=0;
     const sw=title.indexOf("Switched")>=0;
@@ -96,7 +101,7 @@ async function remotePull(){
     if(ts>(S.ld.at||0))S.ld={start:ts,lockEnd:sw?ts+LL:0,last:child,at:ts};
    }else{
     const pit=S.plan&&(S.plan.items.find(i=>i.t===title&&i.who===child&&!S.doneIds.includes(i.id))||S.plan.items.find(i=>i.t===title&&i.who==="either"&&!S.doneIds.includes(i.id)));
-    const rd=K.redo.find(r=>r.t===title),rl=(!rd||rd.rr)?1:0;entry.first=rd?0:1;entry.rolled=rl;K.rolls=(K.rolls||0)+rl;
+    const rd=K.redo.find(r=>r.t===title),rl=(by||!rd||rd.rr)?1:0;entry.first=(rd||by)?0:1;entry.rolled=rl;K.rolls=(K.rolls||0)+rl;
     if(rd)K.redo=K.redo.filter(r=>r.t!==title);
     if(pit){entry.cid=pit.id;S.doneIds.push(pit.id);if(pit.who==="either"&&!S.taken.includes(pit.id))S.taken.push(pit.id);if(K.chosen&&K.chosen.id===pit.id){K.chosen=null;K.pair=[]}}
     else{
@@ -110,11 +115,14 @@ async function remotePull(){
     K.done++;
    }
    S.log.unshift(entry);S.log=S.log.slice(0,25);
-  }
+  }catch(rowErr){SY.err="Row error: "+rowErr}}
   S.synced=S.synced.slice(-1000);
   if(changed){save();if(canR())render();else U.dirty=true}
- }catch(e){pf++;pw=Math.min(9,pf)}finally{pulling=false}
+ }catch(e){SY.err="Can't reach sheet: "+e;pf++;pw=Math.min(9,pf)}finally{pulling=false;showSy()}
 }
+function syTxt(){const a=SY.ok?Math.max(0,Math.round((Date.now()-SY.ok)/1000)):-1;return (SY.err?"⚠️ "+SY.err:(a<0?"⏳ connecting…":"🟢 synced "+(a<5?"just now":a+"s ago")))+" · "+VER+" · "+SY.rows+" rows · tap to sync"}
+function showSy(){const e=document.getElementById("sy");if(e)e.textContent=syTxt()}
+setInterval(showSy,1000);
 const POLL_MS=3000;
 setInterval(()=>{if(document.visibilityState==="hidden")return;if(pw>0){pw--;return}remotePull()},POLL_MS);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")setTimeout(remotePull,1200)});
@@ -203,6 +211,30 @@ function applyGame(child,title,ts){const i=title.indexOf("|"),kind=title.slice(0
  if(e.tok)K.rolls=(K.rolls||0)+e.tok;
  G.feed.unshift({k:child,x:e.x,ts:ts||Date.now()});G.feed=G.feed.slice(0,12)}
 function gameEvent(k,kind,payload){const t=kind+"|"+JSON.stringify(payload);applyGame(k,t,Date.now());pushRow(k,t)}
+function markable(k){const K=S.kids[k];
+ if(K.redo.length)return[K.redo[0]];
+ if(S.plan){const L=S.plan.items.filter(i=>i.who===k&&!S.doneIds.includes(i.id));
+  S.plan.items.filter(i=>i.who==="either"&&!S.doneIds.includes(i.id)&&(!S.taken.includes(i.id)||(K.chosen&&K.chosen.id===i.id))).forEach(i=>L.push(i));return L}
+ if(K.step<5)return[PRI[K.step]];
+ const a=POOL.filter(okC);if(K.chosen&&!S.doneIds.includes(K.chosen.id)&&!a.some(x=>x.id===K.chosen.id))a.unshift(K.chosen);return a}
+function parentDone(k,c){const K=S.kids[k],ts=Date.now(),left=Math.round(c.m*60/2),earned=rate(left),rd=K.redo.length&&K.redo[0].id===c.id?K.redo[0]:null,rolled=1; const entry={id:"e"+ts,child:k,cid:c.id,title:c.t,min:c.m,earned,left,ts,by:"parent",first:0,rolled};
+ S.log.unshift(entry);S.log=S.log.slice(0,25);
+ if(!S.doneIds.includes(c.id))S.doneIds.push(c.id);
+ K.bank=+(K.bank+earned).toFixed(2);K.rolls=(K.rolls||0)+rolled;K.done++;
+ if(rd)K.redo.shift();
+ else{if(!S.plan)K.step++;if((S.plan?c.who==="either":POOL.some(x=>x.id===c.id))&&!S.taken.includes(c.id))S.taken.push(c.id)}
+ if(K.chosen&&K.chosen.id===c.id){K.chosen=null;K.pair=[]}
+ save();remotePush(entry);return entry}
+function markBox(){
+ let h=`<div class="ent" style="background:var(--bg)"><b>✋ Mark a chore done for a kid</b>`;
+ if(!U.mk)return h+`<div class="mu">For chores they did before opening the app. They get half credit.</div><button class="btn" data-a="mkopen">Mark a chore done…</button>${U.mkmsg?`<p class="c"><b>${esc(U.mkmsg)}</b></p>`:""}</div>`;
+ h+=`<div class="mu">The kid gets <b>half credit</b> (paid as if half the time was left) and 1 roll.</div><div class="row" style="margin-top:8px;gap:8px">`+KIDS.map(n=>`<button class="btn" style="margin-top:0;${U.mk===n?"":"opacity:.55"}" data-a="mkwho" data-v="${n}">${n}</button>`).join("")+`</div>`;
+ if(KIDS.includes(U.mk)){const K=S.kids[U.mk],L=markable(U.mk);
+  if(K.redo.length)h+=`<div class="mu" style="margin-top:8px">${U.mk} has a sent-back chore to finish first:</div>`;
+  else if(!S.plan&&K.step<5)h+=`<div class="mu" style="margin-top:8px">Required chores go in order, so this marks the next one:</div>`;
+  else h+=`<div class="mu" style="margin-top:8px">Tap a chore, then tap again to confirm:</div>`;
+  h+=L.length?L.map(c=>`<button class="pick" data-a="mkdo" data-v="${esc(c.id)}">${esc(c.t)}<div class="mu">⏰ ${c.m} min · pays ${money(rate(Math.round(c.m*60/2)))} + 1 roll${U.ask==="mk"+c.id?" · ⚠️ TAP AGAIN TO CONFIRM":""}</div></button>`).join(""):`<p class="mu"><i>Nothing left to mark for ${U.mk}.</i></p>`}
+ return h+(U.mkmsg?`<p class="c"><b>${esc(U.mkmsg)}</b></p>`:"")+`<button class="btn s" style="color:var(--tx);border-color:var(--ln)" data-a="mkclose">Close</button></div>`}
 function applyApprove(e){e.ok=1;e.bonus=1;const K=S.kids[e.child];K.rolls=(K.rolls||0)+1}
 function doRoll(k){const K=S.kids[k],G=gm();if((K.rolls||0)<=0)return;
  const from=G.pos[k],d=1+Math.floor(Math.random()*6);let p=from+d,x=k+" rolled a "+d,tok=0,o=null;const T={k,d,from,stage:"done",text:""};
@@ -292,7 +324,7 @@ function ldTick(){const sig=ldPhase()+S.ld.start+S.ld.lockEnd;if(sig!==U.ldSig){
 const unseen=()=>S.log.filter(e=>e.laundry&&!e.seen).length;
 function render(){
  const K=S.kids[U.who];
- let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small>`;
+ let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small><div id="sy" data-a="sync" style="font-size:11px;opacity:.75;margin-top:4px;cursor:pointer">${syTxt()}</div>`;
  if(!U.parent)h+=`<div class="tabs">${KIDS.map(n=>`<button class="tab ${n===U.who?"on":""}" data-a="who" data-v="${n}">${n}</button>`).join("")}</div><div class="bank"><span>🐷 ${U.who}'s Piggy Bank</span><span>${money(K.bank)}</span></div>`;
 const gv=!U.parent&&U.view==="game";
  if(!U.parent)h+=`<div class="tabs"><button class="tab ${gv?"":"on"}" data-a="view" data-v="chores">📋 Chores</button><button class="tab ${gv?"on":""}" data-a="view" data-v="game">🎮 Game${(K.rolls||0)?" · "+K.rolls+" 🎲":""}</button></div>`;
@@ -318,9 +350,9 @@ function parentView(){
  if(!U.authed)return`<p class="mu">Enter parent PIN:</p><input type="password" id="pin" inputmode="numeric" placeholder="••••"><button class="btn" data-a="login">Unlock</button>${U.msg?`<p class="c" style="color:var(--bad)">${esc(U.msg)}</p>`:""}`;
  if(U.resetPage)return resetPage();
  if(U.edit)return planEditor();
- let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+gameBox()+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
+ let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+markBox()+gameBox()+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
  if(!S.log.length)h+=`<p class="mu"><i>Nothing submitted yet.</i></p>`;
- for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b></div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${photosHtml(e)}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.first&&!e.ok&&!e.laundry?`<button class="btn g" data-a="approve" data-v="${e.id}">✅ Approve: bonus roll for ${esc(e.child)}</button>`:""}${e.ok?`<div class="mu" style="margin-top:6px">✅ Approved, bonus roll given</div>`:""}${e.laundry&&!e.earned?"":`<input type="text" data-cm="${e.id}" maxlength="200" placeholder="Comment for ${esc(e.child)} (optional)" value="${esc(U.cmt&&U.cmt[e.id]||"")}" style="margin-top:8px;font-size:15px;text-align:left"><button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
+ for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b>${e.by==="parent"?` <span class="tag" style="background:#fef3c7;color:#92400e">✋ Marked by parent · half credit</span>`:""}</div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${photosHtml(e)}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.first&&!e.ok&&!e.laundry?`<button class="btn g" data-a="approve" data-v="${e.id}">✅ Approve: bonus roll for ${esc(e.child)}</button>`:""}${e.ok?`<div class="mu" style="margin-top:6px">✅ Approved, bonus roll given</div>`:""}${e.laundry&&!e.earned?"":`<input type="text" data-cm="${e.id}" maxlength="200" placeholder="Comment for ${esc(e.child)} (optional)" value="${esc(U.cmt&&U.cmt[e.id]||"")}" style="margin-top:8px;font-size:15px;text-align:left"><button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
  h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="resetpage">⚠️ Reset app for everyone…</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Resets the app on every phone. You will be asked to confirm first.</p><p class="mu c">Chores, photos and the laundry timer sync across all phones automatically.</p>`;
  return h}
 function resetPage(){const P=S.kids.Peyton,C=S.kids.Carter;
@@ -385,7 +417,8 @@ function doReject(e,note){
  if(!e.laundry){const ch=PRI.concat(POOL).concat(S.plan?S.plan.items:[]).find(x=>x.id===e.cid);const tb=(e.rolled||0)+(e.bonus||0),tk=Math.min(K.rolls||0,tb);K.rolls=(K.rolls||0)-tk;K.redo.push({id:e.cid,t:e.title,m:e.min||(ch?ch.m:10),left:e.left,note:note||"",rr:e.rolled>0&&tk===tb});K.breakEnd=0}
  S.log=S.log.filter(x=>x.id!==e.id);K.done=Math.max(0,K.done-1);save()}
 $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)return;const a=t.dataset.a,v=t.dataset.v,K=S.kids[U.who],asked=U.ask;U.ask=null;U.note="";U.pnote="";if(a==="photo"||a==="photo0")U.cam=Date.now();
- if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.resetPage=false;U.msg="";render()}
+ if(a==="sync"){pw=0;pf=0;SY.err="";remotePull();return}
+ if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.resetPage=false;U.mk="";U.mkmsg="";U.msg="";render()}
  else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=U.photo0=null;U.msg="";U.turn=null;U.flash="";render()}
  else if(a==="login"){if(document.getElementById("pin").value===S.pin){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
  else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=p;save();U.note="✅ PIN saved."}else U.note="Use at least 4 digits.";render()}
@@ -395,6 +428,10 @@ $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)retu
  else if(a==="finish"){const lf=Math.max(0,Math.ceil((U.end-Date.now())/1000));if(U.d0-lf<U.need){render();return}U.left=lf;U.stage="PHOTO";render()}
  else if(a==="submit")submit();
  else if(a==="skipbreak"){K.breakEnd=0;save();render()}
+ else if(a==="mkopen"){U.mk="*";U.mkmsg="";render()}
+ else if(a==="mkclose"){U.mk="";render()}
+ else if(a==="mkwho"){U.mk=v;U.mkmsg="";render()}
+ else if(a==="mkdo"){if(asked==="mk"+v){const c=markable(U.mk).find(x=>x.id===v);if(c){const en=parentDone(U.mk,c);U.mkmsg="✅ Marked \""+c.t+"\" done for "+U.mk+": +"+money(en.earned)+(en.rolled?" and 1 roll":"")+"."}render()}else{U.ask="mk"+v;render()}}
  else if(a==="view"){U.view=v;render()}
  else if(a==="roll"){if(!U.turn)doRoll(U.who);render()}
  else if(a==="turnok"){U.turn=null;render()}
