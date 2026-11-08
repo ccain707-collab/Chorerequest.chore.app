@@ -1,3 +1,33 @@
+None selected 
+
+Skip to content
+Using ccainllc.com Mail with screen readers
+
+1 of 1,763
+Index
+Inbox
+
+Courtney Cain <courtney@ccainllc.com>
+Attachments
+8:43 AM (4 minutes ago)
+to me
+
+
+
+Courtney Cain
+Owner
+Courtney Cain Contracting & Credentialing, LLC
+(401)236-7372
+courtney@ccainllc.com
+
+
+CONFIDENTIALITY NOTICE: The information contained in this message is legally privileged and confidential information intended for the use of the individual or entity named above. If the reader of this message is not the intended recipient, you are hereby notified that any release, dissemination, distribution, or copying of this communication is strictly prohibited. If you have received this communication in error, please notify the author immediately by replying to this message and deleting the original message. Thank you.
+
+ One attachment
+  •  Scanned by Gmail
+tony jen@kindredhearttherapy.org
+index (4).html
+100%
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -44,7 +74,9 @@ const $=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=n=>(n<0?"-$":"$")+Math.abs(n).toFixed(2);
 const SY={ok:0,err:"",rows:0,tries:0};
-const VER="v10";
+const VER="v11";
+function hp(v){let h=5381;v=String(v);for(let i=0;i<v.length;i++)h=((h*33)^v.charCodeAt(i))>>>0;return "h:"+h.toString(36)+v.length}
+const pinOk=v=>v!==""&&(v===S.pin||hp(v)===S.pin);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){
   try{(S.log||[]).forEach(x=>{if(x.photo&&x.photo.indexOf("data:")===0)delete x.photo;if(x.photo0&&x.photo0.indexOf("data:")===0)delete x.photo0;delete x.audio});localStorage.setItem(KEY,JSON.stringify(S))}catch(e2){SY.err="Storage full: "+e2}}
  if(dbDoc){try{dbDoc.set({json:JSON.stringify(S)}).catch(()=>{})}catch(e){}}}
@@ -80,6 +112,8 @@ async function remotePull(){
    if(!/^https?:/.test(photoUrl))photoUrl="";if(!/^https?:/.test(photo0))photo0="";
    if(!ts||S.synced.includes(ts))continue;
    if(child==="PLAN"){S.synced.push(ts);changed=true;try{applyPlan(title==="OFF"?null:JSON.parse(title),ts)}catch(e){}continue}
+   if(child==="PINSET"){S.synced.push(ts);changed=true;if(title.length>=4){S.pin=title;if(S.pinReq&&ts>S.pinReq.ts)S.pinReq=null}continue}
+   if(child==="PINREQ"){S.synced.push(ts);changed=true;if(title==="CLEAR")S.pinReq=null;else S.pinReq={ts,who:title.slice(0,40)};continue}
    if(child==="RESET"){S.synced.push(ts);changed=true;wipe();continue}
    if(child==="CHORE"){S.synced.push(ts);changed=true;try{if(title.indexOf("DEL|")===0){const dt=title.slice(4).toLowerCase();S.custom=lib().filter(x=>x.t.toLowerCase()!==dt)}else if(title.indexOf("EDIT|")===0){const ed=JSON.parse(title.slice(5));applyEdit(String(ed.k),String(ed.t).slice(0,80),Number(ed.m)||10)}else{const c=JSON.parse(title);if(c&&c.t&&!lib().some(x=>x.t.toLowerCase()===String(c.t).toLowerCase()))lib().push({t:String(c.t).slice(0,80),m:Number(c.m)||15})}}catch(e){}continue}
    if(!S.kids[child])continue;
@@ -141,7 +175,7 @@ function pushRow(child,chore){let ts=Date.now();while(S.synced.includes(ts))ts++
 function addLib(t,m){if(lib().some(x=>x.t.toLowerCase()===t.toLowerCase()))return;lib().push({t,m});save();pushRow("CHORE",JSON.stringify({t,m}))}
 function delLib(t){S.custom=lib().filter(x=>x.t.toLowerCase()!==t.toLowerCase());save();pushRow("CHORE","DEL|"+t)}
 function applyQ(){const q=(U.q||"").trim().toLowerCase();let n=0,t=0;document.querySelectorAll("[data-ct]").forEach(el=>{t++;const m=!q||el.dataset.ct.includes(q);el.style.display=m?"":"none";if(m)n++});const c=document.getElementById("cc");if(c)c.textContent=q?n+" of "+t+" chores match"+(n?"":". Not found? Add it at the bottom."):""}
-function wipe(){S={pin:S.pin,synced:S.synced||[],plan:null,planAt:S.planAt||0,custom:lib(),ov:S.ov||{},game:null,taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;U.msg="";U.cmt={};U.turn=null;U.flash="";save()}
+function wipe(){S={pin:S.pin,pinReq:S.pinReq||null,synced:S.synced||[],plan:null,planAt:S.planAt||0,custom:lib(),ov:S.ov||{},game:null,taken:[],doneIds:[],log:[],ld:{start:0,lockEnd:0,last:""},kids:{Peyton:kid0(),Carter:kid0()}};U.stage="READ";U.audio=U.photo=U.photo0=null;U.warned=0;U.msg="";U.cmt={};U.turn=null;U.flash="";save()}
 const navKey=()=>[U.who,U.parent?1:0,U.edit?1:0,U.resetPage?1:0].join()+(U.view==="game"&&!U.parent?",g":"");
 function nav(){const k=navKey();if(U.navk===undefined){try{history.replaceState({k},"")}catch(e){}U.navk=k;return}if(k!==U.navk){try{history.pushState({k},"")}catch(e){}U.navk=k}}
 window.addEventListener("popstate",e=>{
@@ -321,10 +355,11 @@ function ldCard(){const p=ldPhase(),L=S.ld,last=L.last?`<div class="mu">🧺 <b>
  return box('<b style="color:var(--ok)">Time to switch the laundry!</b>',`<button class="btn g" data-a="ldclaim">Only push this button if you're the one switching the laundry (+$1.00 for ${U.who})</button>`)}
 function ldTick(){const sig=ldPhase()+S.ld.start+S.ld.lockEnd;if(sig!==U.ldSig){U.ldSig=sig;if(!U.parent&&!U.rec&&(!document.activeElement||document.activeElement.tagName!=="INPUT"))render();return}
  const t=document.getElementById("ldt");if(t)t.textContent=fmt(ldSecs())}
+function pinBox(){if(!S.pinReq)return"";const t=new Date(S.pinReq.ts).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"});return`<div class="ent" style="background:#e0f2fe;color:#075985;border-color:#38bdf8"><b>🔑 PIN reset requested</b><div style="font-size:13px;margin:4px 0">${esc(S.pinReq.who||"A device")} · ${t}. Only approve if a parent asked.</div><input type="text" id="rp" inputmode="numeric" placeholder="New PIN (4+ digits)"><button class="btn" data-a="pinok">Approve & set new PIN for everyone</button><button class="btn" style="background:#64748b" data-a="pinno">Dismiss request</button>${U.pinmsg?`<p class="c" style="color:var(--bad)">${esc(U.pinmsg)}</p>`:""}</div>`}
 const unseen=()=>S.log.filter(e=>e.laundry&&!e.seen).length;
 function render(){
  const K=S.kids[U.who];
- let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small><div id="sy" data-a="sync" style="font-size:11px;opacity:.75;margin-top:4px;cursor:pointer">${syTxt()}</div>`;
+ let h=`<header style="position:relative"><button class="pp" data-a="pp">${U.parent?"Kids view":"🔒 Parent"+(S.pinReq?" 🔑":"")+(unseen()?" 🔔 "+unseen():"")}</button><h1>ChoreQuest</h1><small>Peyton & Carter Edition</small><div id="sy" data-a="sync" style="font-size:11px;opacity:.75;margin-top:4px;cursor:pointer">${syTxt()}</div>`;
  if(!U.parent)h+=`<div class="tabs">${KIDS.map(n=>`<button class="tab ${n===U.who?"on":""}" data-a="who" data-v="${n}">${n}</button>`).join("")}</div><div class="bank"><span>🐷 ${U.who}'s Piggy Bank</span><span>${money(K.bank)}</span></div>`;
 const gv=!U.parent&&U.view==="game";
  if(!U.parent)h+=`<div class="tabs"><button class="tab ${gv?"":"on"}" data-a="view" data-v="chores">📋 Chores</button><button class="tab ${gv?"on":""}" data-a="view" data-v="game">🎮 Game${(K.rolls||0)?" · "+K.rolls+" 🎲":""}</button></div>`;
@@ -347,10 +382,10 @@ function kidView(K){
   if(U.photo)h+=`<button class="btn g" data-a="submit">Submit & claim ${money(rate(U.left))} 💰</button>`}
  return h}
 function parentView(){
- if(!U.authed)return`<p class="mu">Enter parent PIN:</p><input type="password" id="pin" inputmode="numeric" placeholder="••••"><button class="btn" data-a="login">Unlock</button>${U.msg?`<p class="c" style="color:var(--bad)">${esc(U.msg)}</p>`:""}`;
+ if(!U.authed)return`<p class="mu">Enter parent PIN:</p><input type="password" id="pin" inputmode="numeric" placeholder="••••"><button class="btn" data-a="login">Unlock</button><p class="c" style="margin-top:14px"><a href="#" data-a="forgot" style="color:var(--mu,#888);font-size:14px">Forgot PIN? Request a reset</a></p>${U.fmsg?`<p class="c" style="color:var(--ok,#16a34a)">${esc(U.fmsg)}</p>`:""}${U.msg?`<p class="c" style="color:var(--bad)">${esc(U.msg)}</p>`:""}`;
  if(U.resetPage)return resetPage();
  if(U.edit)return planEditor();
- let h=(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+markBox()+gameBox()+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
+ let h=pinBox()+(unseen()?`<div class="ent" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">${S.log.filter(e=>e.laundry&&!e.seen).map(e=>`<div style="font-size:17px;margin-bottom:4px"><b>🔔 ${esc(e.child)} just ${e.start?"started":"switched"} the laundry!</b> <span style="font-size:12px">${new Date(e.ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></div>`).join("")}<button class="btn" style="background:#b45309" data-a="ack">Got it</button></div>`:"")+markBox()+gameBox()+planBox()+`<h3 style="margin:0">Completed chores</h3><p class="mu">Tap the red button if a chore wasn't done right. The money is taken back and the chore returns to that child's list. Type a comment first and your child will see it (they can't reply).</p>`;
  if(!S.log.length)h+=`<p class="mu"><i>Nothing submitted yet.</i></p>`;
  for(const e of S.log)h+=`<div class="ent"><div class="row"><div>${e.laundry&&!e.seen?`<span class="tag" style="background:#fef3c7;color:#92400e">NEW</span> `:""}<span class="tag">${esc(e.child)}</span> <span class="mu">${new Date(e.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span><br><b>${esc(e.title)}</b>${e.by==="parent"?` <span class="tag" style="background:#fef3c7;color:#92400e">✋ Marked by parent · half credit</span>`:""}</div><b style="color:var(--ok)">+${money(e.earned)}</b></div>${photosHtml(e)}${e.audio?`<audio controls src="${e.audio}"></audio>`:""}${e.first&&!e.ok&&!e.laundry?`<button class="btn g" data-a="approve" data-v="${e.id}">✅ Approve: bonus roll for ${esc(e.child)}</button>`:""}${e.ok?`<div class="mu" style="margin-top:6px">✅ Approved, bonus roll given</div>`:""}${e.laundry&&!e.earned?"":`<input type="text" data-cm="${e.id}" maxlength="200" placeholder="Comment for ${esc(e.child)} (optional)" value="${esc(U.cmt&&U.cmt[e.id]||"")}" style="margin-top:8px;font-size:15px;text-align:left"><button class="btn s" data-a="reject" data-v="${e.id}">${U.ask==="rej"+e.id?"⚠️ Tap again to confirm: deduct "+money(e.earned):"❌ Mark Incomplete & Deduct "+money(e.earned)}</button>`}</div>`;
  h+=`<hr style="border-color:var(--ln);margin:18px 0"><p class="mu">Change PIN:</p><input type="text" id="np" inputmode="numeric" placeholder="New PIN"><button class="btn" data-a="setpin">Save PIN</button><hr style="border-color:var(--ln);margin:18px 0"><button class="btn r" data-a="resetpage">⚠️ Reset app for everyone…</button>${U.note?`<p class="c"><b>${esc(U.note)}</b></p>`:""}<p class="mu c">Resets the app on every phone. You will be asked to confirm first.</p><p class="mu c">Chores, photos and the laundry timer sync across all phones automatically.</p>`;
@@ -420,8 +455,11 @@ $.addEventListener("click",ev=>{const t=ev.target.closest("[data-a]");if(!t)retu
  if(a==="sync"){pw=0;pf=0;SY.err="";remotePull();return}
  if(a==="pp"){U.parent=!U.parent;U.authed=false;U.edit=false;U.ed="";U.resetPage=false;U.mk="";U.mkmsg="";U.msg="";render()}
  else if(a==="who"){U.who=v;U.stage="READ";U.audio=U.photo=U.photo0=null;U.msg="";U.turn=null;U.flash="";render()}
- else if(a==="login"){if(document.getElementById("pin").value===S.pin){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
- else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=p;save();U.note="✅ PIN saved."}else U.note="Use at least 4 digits.";render()}
+ else if(a==="forgot"){ev.preventDefault&&ev.preventDefault();const nm=(S.kids[U.who]?U.who+"'s phone":"A phone");pushRow("PINREQ",nm);S.pinReq={ts:Date.now(),who:nm};save();U.fmsg="✅ Request sent. A parent can approve it from the Parent Portal on another phone.";U.msg="";render()}
+ else if(a==="pinok"){const n=(document.getElementById("rp").value||"").trim();if(n.length<4){U.pinmsg="Use at least 4 digits.";render();return}U.pinmsg="";S.pin=hp(n);pushRow("PINSET",S.pin);S.pinReq=null;save();U.note="✅ New PIN set on every phone. Tell the person who asked.";render()}
+ else if(a==="pinno"){pushRow("PINREQ","CLEAR");S.pinReq=null;save();render()}
+ else if(a==="login"){if(pinOk(document.getElementById("pin").value)){U.authed=true;U.msg=""}else U.msg="Wrong PIN";render()}
+ else if(a==="setpin"){const p=document.getElementById("np").value.trim();if(p.length>=4){S.pin=hp(p);pushRow("PINSET",S.pin);save();U.note="✅ PIN saved for every phone."}else U.note="Use at least 4 digits.";render()}
  else if(a==="choose"){if(!okC(poolList().find(c=>c.id===v)||{id:v})){newPair(K)}else{S.taken.push(v);K.chosen=K.pair.find(c=>c.id===v)}save();render()}
  else if(a==="rec")toggleRec();
  else if(a==="start"){if(!U.photo0){U.msg="Take the before photo first.";render();return}const c=cur(U.who),d=c.left!=null?c.left:c.m*60;U.end=Date.now()+d*1000;U.left=d;U.d0=d;U.need=Math.min(d,Math.ceil(c.m*60/3));U.stage="TIMER";U.warned=0;U.msg="";U.flash="";render()}
@@ -475,3 +513,4 @@ render();
  dbDoc.onSnapshot(s=>{if(s.exists&&s.data()&&s.data().json&&!s.metadata.hasPendingWrites){try{const n=JSON.parse(s.data().json);if(n&&n.kids){n.ld=n.ld||{start:0,lockEnd:0,last:""};n.taken=n.taken||[];n.doneIds=n.doneIds||[];S=n;localStorage.setItem(KEY,JSON.stringify(S));if(!U.rec&&U.stage!=="TIMER"&&document.activeElement.tagName!=="INPUT")render()}}catch(e){}}else if(!s.exists)save()});
  syncOn=true}catch(e){}})();
 </script></body></html>
+Displaying index (4).html.
